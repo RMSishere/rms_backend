@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title><%= service.label %> Report</title>
+  <%- include('../../partials/head'); %>
+</head>
+
+<body style="background-color: white;">
+
+  <div class="container">
+    <h2 style="text-align: center;">
+      <span><%= service.label; %> Report</span>
+    </h2>
+
+    <div>
+      <%- include('../../partials/requestDetails'); %>
+    </div>
+  </div>
+
+</body>
+
+</html>

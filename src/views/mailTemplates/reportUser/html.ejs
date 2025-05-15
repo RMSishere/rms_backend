@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>User Reported</title>
+  <%- include('../../partials/head'); %>
+</head>
+
+<body style="background-color: white;">
+
+  <div class="container">
+    <h4>
+      <%= `${reportingUser.firstName} ${reportingUser.lastName}`; %> has reported an affiliate.
+    </h4>
+    <div>
+      <div><strong>Message:</strong></div>
+      <p>
+        <%= message %>
+      </p>
+    </div>
+    <br />
+    <br />
+    <div>
+      <h3>Customer Details:</h3>
+      <%- include('../../../partials/userDetails', { user: reportingUser }); %>
+    </div>
+    <br />
+    <br />
+    <div>
+      <h3>Affiliate Details:</h3>
+      <%- include('../../../partials/userDetails', { user: reportedUser }); %>
+    </div>
+    <br />
+    <br />
+  </div>
+
+</body>
+
+</html>

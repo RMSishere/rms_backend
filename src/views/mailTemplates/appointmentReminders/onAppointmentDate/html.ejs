@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>
+    <%= service.label %> Reminder
+  </title>
+  <%- include('../../../partials/head'); %>
+</head>
+
+<body style="background-color: white;">
+  <div class="container">
+    <p>
+      <%- include('../../../partials/greet', { user: appointment.appointee }); %>
+    </p>
+    <div>It&rsquo;s the final countdown. :)</div>
+    <p>
+      <%= service.reminderMailTemplatesData.onAppointmentDate.info %>
+        <strong>
+          <%= moment(appointment.startTime).format('LL') %>
+        </strong>!
+    </p>
+    <div>See appointment details, here:</div>
+    <%- include('../../../partials/appointmentDetails', { appointment }); %>
+      <br />
+      <br />
+      <%- include('../../../partials/regards', { user: appointment.appointer }); %>
+        <p>
+          P.S. - If you have any questions, you can reply to this
+          email and/or call us here:
+          <strong>
+            <%= appointment.appointer.phoneNumber %>
+          </strong>.
+        </p>
+  </div>
+
+</body>
+
+</html>

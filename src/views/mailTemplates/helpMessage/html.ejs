@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Help/Feedback Message</title>
+  <%- include('../../partials/head'); %>
+</head>
+
+<body style="background-color: white;">
+
+  <div class="container">
+    <div><strong>Message:</strong></div>
+    <p><%= message %> </p>
+    <br />
+    <br />
+
+    <div><strong>User Details:</strong></div>
+    <ul>
+      <li class="listItem">
+        <strong>First Name: </strong>
+        <span><%= user.firstName %></span>
+      </li>
+
+      <li class="listItem">
+        <strong>Last Name: </strong>
+        <span><%= user.lastName %></span>
+      </li>
+
+      <li class="listItem">
+        <strong>Email Address:</strong>
+        <span><%= user.email %></span>
+      </li>
+
+      <li class="listItem">
+        <strong>Phone Number: </strong>
+        <span><%= user.phoneNumber %></span>
+      </li>
+
+      <li class="listItem">
+        <strong>Zip Code: </strong>
+        <span><%= user.zipCode %></span>
+      </li>
+    </ul>
+    <br />
+  </div>
+
+</body>
+
+</html>

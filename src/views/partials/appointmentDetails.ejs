@@ -1,0 +1,20 @@
+<!-- TODO: change keys if schema changes -->
+
+<ul>
+
+  <li class="listItem">
+    <strong> Appointment: </strong>
+    <%= appointment.title; %>
+  </li>
+
+  <li class="listItem">
+    <strong> Appointment Date: </strong>
+    <%= moment(appointment.startTime).format("LL"); %>
+  </li>
+
+  <li class="listItem">
+    <strong> Appointment Notes: </strong>
+    <%= appointment.notes %>
+  </li>
+
+</ul>

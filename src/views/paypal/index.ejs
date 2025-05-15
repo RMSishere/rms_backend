@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Paypal Payment</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      * {
+        font-family: 'Open Sans', sans-serif;
+      }
+    </style>
+    <style>
+      #container {
+        padding-top: 20px;
+        padding: 15px;
+        position: relative;
+      }
+
+      .detailsContainer {
+        margin-bottom: 30px;
+      }
+
+      .listItem {
+        margin-bottom: 10px;
+        font-size: 18px;
+      }
+
+      .listItemHeading {
+      }
+
+      .modal {
+        position: absolute;
+        width: 100%;
+        height: 100vh;
+        background-color: white;
+        z-index: 99999;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+    </style>
+    <script src="https://www.paypal.com/sdk/js?client-id=<%= clientId %>" async>
+    </script>
+  </head>
+
+  <body>
+    <div id="loader" class="modal" style="display: none;">
+      <div style="text-align: center; padding: 30px;">
+        <h2 id="loadingText">
+          Please wait while your transaction is being processed.
+        </h2>
+        <h3 style="color: #585858;">
+          Do not close your browser or use the back button at same time.
+        </h3>
+      </div>
+    </div>
+
+    <div id="container">
+      <div class="paymentContianer" style="display: block;">
+        <div class="detailsContainer">
+          <div class="listItem">
+            <strong class="listItemHeading">Paying for: </strong>
+            <span id="payingFor"></span>
+          </div>
+          <div class="listItem">
+            <strong class="listItemHeading">Amount to be paid: </strong>
+            <span id="amount"></span>
+          </div>
+        </div>
+
+        <div id="paypal-button-container"></div>
+      </div>
+
+      <div class="paymentSuccess" style="display: none;">
+        <div style="text-align: center; padding: 30px;">
+          <h2 id="loadingText">Payment was successful.</h2>
+          <a href="runmysaleapp://payment">Go Back to RunMySale App.</a>
+        </div>
+      </div>
+
+      <!-- <a id="clickTarget" href="runmysaleapp://runmysale/payment/cancel">Cancel</a> -->
+
+      <!-- <div style="margin-top: 50px;">
+      <a id="clickTarget" href="runmysaleapp://runmysale/payment/cancel">Cancel</a>
+      <a href="foo://bar/payment/cancel">Cancel2</a>
+      <a id="intentTarget"
+        href="intent://runmysale/#Intent;scheme=runmysaleapp;package=com.runmysale;S.browser_fallback_url=http%3A%2F%2Fwww.google.com;end"
+        ;>Cancel3</a>
+      <a href="runmysaleapp://runmysale/payment/cancel">Cancel4</a> -->
+      <!-- <a id="cancelLink" href="runmysaleapp://runmysale/payment/cancel">Cancel</a> -->
+      <!-- <a id="successLink" href="runmysaleapp://runmysale/payment/cancel">Cancel</a>
+      <a id="errorLink" href="runmysaleapp://runmysale/payment/cancel">Cancel</a> -->
+      <!-- </div> -->
+    </div>
+
+    <script>
+      window.onload = function() {
+        // var PAYMENT_REDIRECT_LINKS = {
+        //   SUCCESS: window.decodeURIComponent("<%=// redirectUri %>") + "/success",
+        //   ERROR: window.decodeURIComponent("<%= // redirectUri %>") + "/error",
+        //   CANCEL: window.decodeURIComponent("<%= // redirectUri %>") + "/cancel",
+        // }
+        var loader = document.getElementById('loader');
+        var loadingText = document.getElementById('loadingText');
+        function showLoader(status) {
+          if (status === TRANSACTION_STATUS.CANCEL) {
+            loadingText.innerText =
+              'Please wait while your transaction is being cancelled.';
+          }
+          loader.style.display = 'flex';
+        }
+
+        function hideLoader() {
+          loader.style.display = 'none';
+        }
+
+        var TRANSACTION_STATUS = {
+          SUCCESS: 'SUCCESS',
+          ERROR: 'ERROR',
+          CANCEL: 'CANCEL',
+        };
+
+        var payment;
+        var userOS = '<%= OS %>';
+
+        function redirectToApp(status) {
+          if (status === TRANSACTION_STATUS.SUCCESS) {
+            var paymentContianer = document.querySelector('.paymentContianer');
+            var paymentSuccess = document.querySelector('.paymentSuccess');
+            if (paymentContianer && paymentSuccess) {
+              paymentContianer.style.display = 'none';
+              paymentSuccess.style.display = 'block';
+            }
+          }
+
+          hideLoader();
+          if (userOS === "ios") {
+            window.location.replace('runmysaleapp://payment')
+          } else {
+            window.close()
+          }
+          return;
+        }
+
+        // This function displays Smart Payment Buttons on your web page.
+        window.onerror = function(message, source, lineno, colno, error) {
+          // alert(message)
+          redirectToApp(TRANSACTION_STATUS.ERROR);
+        };
+
+        var decodedPaymentData = window.atob('<%= paymentData %>');
+        var parsedPaymentData = JSON.parse(decodedPaymentData);
+
+        document.getElementById('payingFor').innerText =
+          parsedPaymentData.paymentDesc;
+        document.getElementById('amount').innerText =
+          '$' + parsedPaymentData.amount;
+
+        paypal
+          .Buttons({
+            // called when clicked on paypal button
+            createOrder: function() {
+              return fetch('/api/v1/payment/paypal/order', {
+                method: 'post',
+                headers: {
+                  'content-type': 'application/json',
+                  token: '<%= token %>',
+                },
+                body: decodedPaymentData,
+              })
+                .then(function(res) {
+                  return res.json();
+                })
+                .then(function(data) {
+                  payment = data;
+                  return data.orderId; // Use the same key name for order ID on the client and server
+                })
+                .catch(function(err) {
+                  // sendMessage({ isError: true, error: err })
+                  redirectToApp(TRANSACTION_STATUS.ERROR);
+                });
+            },
+
+            // called when buyer approves the payment
+            onApprove: function(data) {
+              showLoader();
+              return fetch('/api/v1/payment/paypal/transaction/capture', {
+                method: 'post',
+                headers: {
+                  'content-type': 'application/json',
+                  token: '<%= token %>',
+                },
+                body: JSON.stringify({
+                  orderId: data.orderID,
+                }),
+              })
+                .then(function(res) {
+                  return res.json();
+                })
+                .then(function(dt) {
+                  // sendMessage(dt)
+                  // document.getElementById('intentTarget').click();
+                  payment = dt;
+                  redirectToApp(TRANSACTION_STATUS.SUCCESS);
+                })
+                .catch(function(err) {
+                  // sendMessage({ isError: true, error: err })
+                  redirectToApp(TRANSACTION_STATUS.ERROR);
+                });
+            },
+
+            onCancel: function(data) {
+              // Show a cancel page, or return to cart
+              // sendMessage({ cancelled: true })
+              redirectToApp(TRANSACTION_STATUS.CANCEL);
+            },
+
+            onError: function(error) {
+              // Show a cancel page, or return to cart
+              // sendMessage({ isError: true, error })
+              redirectToApp(TRANSACTION_STATUS.ERROR);
+            },
+          })
+          .render('#paypal-button-container');
+      };
+    </script>
+  </body>
+</html>

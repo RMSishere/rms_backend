@@ -1,0 +1,230 @@
+<!-- TODO: change keys if schema changes -->
+
+<ul>
+
+  <li class="listItem">
+    <strong> Zip code: </strong>
+    <%= request.zip; %>
+  </li>
+
+  <li class="listItem">
+    <strong> <%= service.howSoonLabel %> : </strong>
+    <%= capitalize(request.deliveryTime); %>
+  </li>
+
+  <% if (service.requestDetailProps.includes('whereToSell')) { %>
+  <li class="listItem">
+    <strong> Where would you like to sell?: </strong>
+    <%= request.whereToSell; %>
+  </li>
+  <% } %>
+
+  <% if (service.requestDetailProps.includes('noOfItems')) { %>
+  <li class="listItem">
+    <strong> Number of Items You Have?: </strong>
+    <%= request.noOfItems; %>
+  </li>
+  <% } %>
+
+  <% if (service.requestDetailProps.includes('typeOfItems')) { %>
+  <li class="listItem">
+    <strong> Type of Items: </strong>
+    <%= request.typeOfItems.map(dt => dt.name).join(', '); %>
+  </li>
+  <% } %>
+
+  <% if (service.requestDetailProps.includes('itemsSizes')) { %>
+  <li class="listItem">
+    <strong> What Size Are Your Items?: </strong>
+    <%= request.itemsSizes.map(dt => `${dt.size} (${dt.percent})`).join(', '); %>
+  </li>
+  <% } %>
+
+  <% if (service.requestDetailProps.includes('itemQualities')) { %>
+  <li class="listItem">
+    <strong> Item Quality: </strong>
+    <%= request.itemQualities.map(dt => `${capitalize(dt.qualityType)} (${dt.qualityPercent})`).join(', '); %>
+  </li>
+  <% } %>
+
+  <% if (service.requestDetailProps.includes('itemlocation')) { %>
+  <li class="listItem">
+    <strong> Where Are The Items?: </strong>
+    <ul>
+      <% request.itemlocation.forEach(function(item) { %>
+      <li class="listSubItem">
+
+        <strong><%= item.location; %></strong>
+
+        <% if (item.zones.length) { %>
+        <%= ": " + item.zones.join(', '); %>
+        <% } %>
+
+      </li>
+      <% }); %>
+    </ul>
+  </li>
+  <% } %>
+
+  <% if (service.requestDetailProps.includes('movingToFloor')) { %>
+  <li class="listItem">
+    <strong> Are all the items being moved to a first floor?: </strong>
+    <%= request.movingToFloor; %>
+  </li>
+  <% } %>
+
+  <% if (service.requestDetailProps.includes('movingFromFloor')) { %>
+  <li class="listItem">
+    <strong> Are all the items on the first floor?: </strong>
+    <%= request.movingFromFloor; %>
+  </li>
+  <% } %>
+
+  <% if (service.requestDetailProps.includes('itemsWeight')) { %>
+  <li class="listItem">
+    <strong> Do you have any items over 100 pounds?: </strong>
+    <%= request.itemsWeight; %>
+  </li>
+  <% } %>
+
+  <% if (service.requestDetailProps.includes('city')) { %>
+  <li class="listItem">
+    <strong> Moving within your current city or no?: </strong>
+    <%= request.city; %>
+  </li>
+  <% } %>
+
+  <% if (service.requestDetailProps.includes('movingFrom')) { %>
+  <li class="listItem">
+    <strong> Where are you moving from?: </strong>
+    <%= request.movingFrom.join(', '); %>
+  </li>
+  <% } %>
+
+  <% if (service.requestDetailProps.includes('state')) { %>
+  <li class="listItem">
+    <strong> Moving instate or out of state?: </strong>
+    <%= request.state; %>
+  </li>
+  <% } %>
+
+  <% if (service.requestDetailProps.includes('movingTo')) { %>
+  <li class="listItem">
+    <strong> Where are you moving to?: </strong>
+    <%= request.movingTo.join(', '); %>
+  </li>
+  <% } %>
+
+  <% if (service.requestDetailProps.includes('needRealtor')) { %>
+  <li class="listItem">
+    <strong> Why Do You Need A Realtor?: </strong>
+    <%= request.needRealtor; %>
+  </li>
+  <% } %>
+
+  <% if (service.requestDetailProps.includes('pressureWashItems')) { %>
+  <li class="listItem">
+    <strong> What Do You Need Pressure Washed?: </strong>
+    <%= request.pressureWashItems.join(', '); %>
+  </li>
+  <% } %>
+
+  <% if (service.requestDetailProps.includes('organized')) { %>
+  <li class="listItem">
+    <strong> What Do You Need Organized?: </strong>
+    <%= request.organized.join(', '); %>
+  </li>
+  <% } %>
+
+  <% if (service.requestDetailProps.includes('whatHelpNeed')) { %>
+  <li class="listItem">
+    <strong> What Do You Need Help With?: </strong>
+    <%= request.whatHelpNeed; %>
+  </li>
+  <% } %>
+
+  <% if (service.requestDetailProps.includes('images')) { %>
+  <li class="listItem">
+    <strong> Picture links: </strong>
+    <ul>
+      <% request.images.forEach(function(item) { %>
+      <li class="listSubItem">
+        <a href="<%= item; %>"><%= item; %></a>
+      </li>
+      <% }); %>
+    </ul>
+  </li>
+  <% } %>
+
+  <% if (service.requestDetailProps.includes('videos')) { %>
+  <li class=" listItem">
+    <strong> Video links: </strong>
+
+    <ul>
+      <% request.videos.forEach(function(item) { %>
+      <li class="listSubItem">
+        <a href="<%= item; %>"><%= item; %></a>
+      </li>
+      <% }); %>
+    </ul>
+  </li>
+  <% } %>
+
+
+  <% if (service.requestDetailProps.includes('remark')) { %>
+  <li class="listItem">
+    <strong> Additional Notes: </strong>
+    <%= request.remark; %>
+  </li>
+  <% } %>
+
+</ul>
+
+<div style="margin-left: 40px;">
+
+  <% if (service.requestDetailProps.includes('items') && service.type === "SELL") { %>
+  <h4 class="listItem">
+    <strong> Items Status: </strong>
+  </h4>
+
+  <div style="margin-left: 10px;">
+    <% for(var i=0; i < request.items.length; i++) { %>
+    <div style="border: 1px solid black; padding: 15px; margin-bottom: 10px;">
+      <div style="display: flex; align-items: center;">
+        <strong style="margin-right: 10px"> Item Name: </strong>
+        <%= request.items[i].name; %>
+      </div>
+      <div style="display: flex; align-items: center;">
+        <strong style="margin-right: 10px"> Item Quality: </strong>
+        <%= capitalize(request.items[i].itemQuality); %>
+      </div>
+      <div style="display: flex; align-items: center;">
+        <strong style="margin-right: 10px"> Item Status: </strong>
+        <%= capitalize(request.items[i].status) ; %>
+      </div>
+
+      <% if (!!request.items[i].amount && request.items[i].status === "SOLD") { %>
+      <div style="display: flex; align-items: center;">
+        <strong style="margin-right: 10px"> Amount Sold: </strong>
+        <%= formatMoney(request.items[i].amount); %>
+      </div>
+      <div>
+        <strong style="margin-right: 10px; white-space: nowrap;"> Affiliate Charge: </strong>
+        <%= getAffilaiteChargeForItem(request.items[i]); %>
+      </div>
+      <div style="display: flex; align-items: center;">
+        <strong style="margin-right: 10px"> Client Cut: </strong>
+        <%= getClientCutForItem(request.items[i]); %>
+      </div>
+      <% } %>
+      <div style="display: flex; align-items: center;">
+        <strong style="margin-right: 10px"> Special Notes: </strong>
+        <%= request.items[i].remark; %>
+      </div>
+    </div>
+
+    <% } %>
+  </div>
+</div>
+
+<% } %>

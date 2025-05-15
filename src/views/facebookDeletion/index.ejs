@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Facebook Deletion Status</title>
+  <%- include('../partials/head'); %>
+</head>
+
+<body style="background-color: white;">
+
+  <div class="container">
+    <h2 style="text-align: center;">Facebook Information Deletion Status</h2>
+
+    <% if(name){ %>
+    <p style="text-align: center;">
+      <% if(deleted){ %>
+      <%= name; %> Facebook information has been deleted from RunMySale.
+      <% } else{ %>
+      <%= name; %> Facebook information has not been deleted from RunMySale.
+      <% } %>
+    </p>
+    <% } else{ %>
+    <p style="text-align: center;">
+      User Not Found!
+    </p>
+    <% } %>
+
+
+
+  </div>
+
+</body>
+
+</html>
