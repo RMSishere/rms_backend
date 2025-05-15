@@ -839,7 +839,6 @@ console.log(newadata,'dataaaa');
       throw err;
     }
   }
-
   async getApprovedAffiliates(condition?: any): Promise<User[]> {
     try {
       const filter: any = {
@@ -855,7 +854,6 @@ console.log(newadata,'dataaaa');
       throw err;
     }
   }
-
   async createBusinessProfile(
     data: BusinessProfile,
     user: User,
@@ -895,7 +893,6 @@ console.log(user);
       throw err;
     }
   }
-
   async updateBusinessProfile(
     data: BusinessProfile,
     user: User,
@@ -930,7 +927,6 @@ console.log(user);
       throw err;
     }
   }
-
   async approveBusinessProfile(id: string, user: User): Promise<User> {
     try {
       const filter = { id };
@@ -978,9 +974,6 @@ console.log(user);
       throw err;
     }
   }
-  
-  
-  
   async getAreaServiceAndNearByZipCodes(
     areaServices: Array<{ zipCode: string }>,
     serviceCoverage: number,
@@ -1019,9 +1012,6 @@ console.log(user);
       throw err;
     }
   }
-  
-  
-
   async getAffiliatesByZip(zipCode: string, user: User): Promise<User[]> {
     try {
       // get all affiliates whose nearby zipcodes contains the give zipcode
@@ -1065,7 +1055,6 @@ console.log(user);
       throw err;
     }
   }
-
   async getAllCustomers(params: any): Promise<PaginatedData> {
     const skip = parseInt(params.skip) || 0;
     const filter = { isActive: true, role: USER_ROLES.CLIENT };

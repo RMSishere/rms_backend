@@ -59,6 +59,21 @@ export const usersSchema = new mongoose.Schema(
     updatedBy: { type: String, default: null },
     blockedUsers: [{ type: mongoose.Types.ObjectId, ref: 'users' }],
     deletedAt: { type: Date },
+    subscription: {
+      subscriptionId: { type: String },
+      customerId: { type: String },
+      type: { type: String },
+      billingType: { type: String },
+      status: { type: String },
+      startedAt: { type: Date },
+      expiresAt: { type: Date },
+      jobRequestCountThisMonth: { type: Number, default: 0 },
+      pricingRequestsUsed: { type: Number, default: 0 },
+      customVideosUsed: { type: Number, default: 0 },
+      pitchReviewsUsed: { type: Number, default: 0 },
+      lastReset: { type: Date },
+    },
+    
   },
   {
     timestamps: true,
