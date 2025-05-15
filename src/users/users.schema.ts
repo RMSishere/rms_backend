@@ -49,8 +49,11 @@ export const usersSchema = new mongoose.Schema(
         os: { type: String },
       },
     ],
-    notificationSubscriptions: [notificationSubscriptionSchema],
-    receiveMailForChat: { type: Boolean, default: false },
+    notificationSubscriptions: {
+      type: [notificationSubscriptionSchema],
+      default: undefined, // makes the field optional
+    },
+        receiveMailForChat: { type: Boolean, default: false },
     termsAccepted: { type: Boolean, default: false, select: false },
     createdBy: { type: String, default: null },
     updatedBy: { type: String, default: null },

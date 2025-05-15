@@ -10,6 +10,9 @@ import {
   UseGuards,
   Render,
 } from '@nestjs/common';
+import {
+  User,
+} from '../lib/index';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { USER_ROLES } from 'src/config';
@@ -21,13 +24,16 @@ import { getfullName } from 'src/util';
 import moment = require('moment');
 import appleSigninAuth from 'apple-signin-auth';
 import jwt_decode from "jwt-decode";
+import { BadRequestException } from '@nestjs/common';
 
 
 
 @UseGuards(RolesGuard)
 @Controller('auth')
 export class UserController {
-  constructor(public readonly userFactory: UserFactory) {}
+  constructor(public readonly userFactory: UserFactory) {
+    
+  }
 
   @Post('register')
   async addUser(@Body() data: UserDto) {
@@ -130,6 +136,8 @@ export class UserController {
     @Body('to') to: string,
     @Body('channel') channel: string,
   ) {
+ 
+    
     return this.userFactory.requestVerificationCode(to, channel);
   }
 
@@ -195,5 +203,14 @@ export class UserController {
   @Get('ownUserData')
   async getOwnUserData(@Req() req) {
     return this.userFactory.getOwnUserData(req.user);
+  }
+  @Post('approveBusiness')
+  async approveBusiness(@Req() req, @Body() body: { phoneNumber: string }) {
+    const { phoneNumber } = body;
+    if (!phoneNumber) {
+      throw new BadRequestException('Phone number is required');
+    }
+  
+    return this.userFactory.approveBusinessProfile2(phoneNumber, req.user);
   }
 }

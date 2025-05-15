@@ -53,6 +53,10 @@ const commonExcludeRoutes = [
     path: `${GLOBAL_PREFIX}/auth/verificationCode/verify`,
     method: RequestMethod.POST,
   },
+  // {
+  //   path: `${GLOBAL_PREFIX}/auth/businessProfile`,
+  //   method: RequestMethod.POST,
+  // },
   {
     path: `${GLOBAL_PREFIX}/auth/checkPhoneNumber`,
     method: RequestMethod.POST,

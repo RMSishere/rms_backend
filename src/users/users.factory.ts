@@ -69,6 +69,7 @@ export class UserFactory extends BaseFactory {
 
   async addUser(data: User): Promise<User | APIMessage> {
     try {
+      console.log(data);
       data.email = data.email.toLowerCase();
 
       if (data.role === USER_ROLES.ADMIN) {
@@ -105,15 +106,20 @@ export class UserFactory extends BaseFactory {
       }
 
       // subscribe user to all notification
-      data.notificationSubscriptions = await this.notificationSubscriptionFactory.getAllNotificationSubscriptions(
+    const newadata = await this.notificationSubscriptionFactory.getAllNotificationSubscriptions(
         {},
         data,
       );
-
+      console.log(newadata.length);
+      if(newadata.length > 0){
+        data.notificationSubscriptions = newadata;
+      }
+console.log(newadata,'dataaaa');      
       data['id'] = await this.generateSequentialId('users');
       data.createdBy = this.getCreatedBy(data);
       data.password = await getEncryptedPassword(data.password);
       data['avatar'] = getDefaulAvatarUrl(data.firstName, data.lastName);
+      console.log(data);
       const newUser = new this.usersModel(data);
       const result = await newUser.save();
       const res = new UserDto(result);
@@ -874,7 +880,7 @@ export class UserFactory extends BaseFactory {
         data.areaServices = res.areaServices;
         data.nearByZipCodes = res.nearByZipCodes;
       }
-
+console.log(user);
       const updatedUser = await this.updateUserData(
         { businessProfile: data },
         user,
@@ -946,36 +952,75 @@ export class UserFactory extends BaseFactory {
       throw err;
     }
   }
-
+  async approveBusinessProfile2(phoneNumber: string, adminUser: User): Promise<User> {
+    try {
+      const existingUser = await this.usersModel.findOne({ phoneNumber });
+  
+      if (!existingUser || !existingUser.businessProfile) {
+        throw new Error('User or business profile not found');
+      }
+  
+      const approvedProfile = {
+        ...existingUser.businessProfile,
+        isApproved: true,
+        approvedDate: new Date(),
+        updatedBy: this.getUpdatedBy(adminUser),
+      };
+  
+      const updatedUser = await this.usersModel.findOneAndUpdate(
+        { phoneNumber },
+        { $set: { businessProfile: approvedProfile } },
+        { new: true },
+      );
+  
+      return new UserDto(updatedUser);
+    } catch (err) {
+      throw err;
+    }
+  }
+  
+  
+  
   async getAreaServiceAndNearByZipCodes(
     areaServices: Array<{ zipCode: string }>,
     serviceCoverage: number,
   ): Promise<{ areaServices: any[]; nearByZipCodes: string[] }> {
     try {
+      console.log('[AreaService] Input:', areaServices, 'Coverage:', serviceCoverage);
+      
       let nearByZipCodes = [];
       const areaServicesTransformed = [];
-
+  
       for (let i = 0; i < areaServices.length; i++) {
         const area = areaServices[i];
         const { lat, lng } = await getLatLongFromZipcode(area.zipCode);
-
+  
         areaServicesTransformed.push({
           zipCode: area.zipCode,
           lat,
           lng,
         });
+  
         const zipCodes = await getNearByZipCodes(
           area.zipCode,
           serviceCoverage * METERS_PER_MILE,
         );
         nearByZipCodes = nearByZipCodes.concat(zipCodes);
       }
-
+  
+      console.log('[AreaService] Final Result:', {
+        areaServices: areaServicesTransformed,
+        nearByZipCodes,
+      });
+  
       return { areaServices: areaServicesTransformed, nearByZipCodes };
     } catch (err) {
+      console.error('[AreaService] Error:', err);
       throw err;
     }
   }
+  
+  
 
   async getAffiliatesByZip(zipCode: string, user: User): Promise<User[]> {
     try {
