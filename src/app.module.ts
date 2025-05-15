@@ -93,7 +93,7 @@ const commonExcludeRoutes = [
     MongooseModule.forRoot(process.env.DB_URL, {
       useNewUrlParser: true,
       useFindAndModify: false,
-      useCreateIndex: true,
+      autoIndex: false, // disables auto index creation
     }),
   ],
   controllers: [AppController],

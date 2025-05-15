@@ -20,6 +20,7 @@ import {
   parseFacebookSignedRequest,
 } from 'src/util';
 import { getLatLongFromZipcode } from 'src/util/geo';
+import { randomUUID } from 'crypto'; // Built-in Node module
 
 import { Device } from 'src/util/pushNotification';
 import { sendTemplateEmail } from 'src/util/sendMail';
@@ -69,22 +70,25 @@ export class UserFactory extends BaseFactory {
 
   async addUser(data: User): Promise<User | APIMessage> {
     try {
-      console.log(data);
+      console.log('Raw input data:', data);
       data.email = data.email.toLowerCase();
-
+  
       if (data.role === USER_ROLES.ADMIN) {
+        console.log('Admin role detected – throwing error');
         throw new InternalServerErrorException();
       }
-
+  
       if (!data.termsAccepted) {
+        console.log('Terms not accepted');
         return new APIMessage(
           'Please accept terms and conditions!',
           APIMessageTypes.ERROR,
         );
       }
-
+  
       if (data.email) {
         const userExist = await this.checkUserExist({ email: data.email, role: data.role });
+        console.log('Email check result:', userExist);
         if (userExist) {
           return new APIMessage(
             'User with given email & role already exists!',
@@ -92,11 +96,13 @@ export class UserFactory extends BaseFactory {
           );
         }
       }
-
+  
       if (data.phoneNumber) {
         const userExist = await this.checkUserExist({
-          phoneNumber: data.phoneNumber, role: data.role 
+          phoneNumber: data.phoneNumber,
+          role: data.role,
         });
+        console.log('Phone check result:', userExist);
         if (userExist) {
           return new APIMessage(
             'User with given phone number & role already exists!',
@@ -104,35 +110,63 @@ export class UserFactory extends BaseFactory {
           );
         }
       }
-
-      // subscribe user to all notification
-    const newadata = await this.notificationSubscriptionFactory.getAllNotificationSubscriptions(
-        {},
-        data,
-      );
-      console.log(newadata.length);
-      if(newadata.length > 0){
-        data.notificationSubscriptions = newadata;
+  
+      // Fetch and sanitize notification subscriptions
+      const newadata = await this.notificationSubscriptionFactory.getAllNotificationSubscriptions({}, data);
+      console.log('Generated notificationSubscriptions:', JSON.stringify(newadata, null, 2));
+  
+      if (Array.isArray(newadata) && newadata.length > 0) {
+        const seen = new Set<string>();
+  
+        const sanitized = newadata
+          .filter(sub => !!sub) // Remove falsy entries
+          .map(sub => {
+            // Assign unique ID if missing
+            if (!sub.id) sub.id = randomUUID();
+  
+            // Skip duplicates and nulls
+            if (!sub.id || seen.has(sub.id)) return null;
+  
+            seen.add(sub.id);
+            return sub;
+          })
+          .filter(Boolean); // Remove nulls from map step
+  
+        console.log('Sanitized notificationSubscriptions count:', sanitized.length);
+        data.notificationSubscriptions = sanitized;
+      } else {
+        // Explicitly remove the field if empty to avoid implicit null insertions
+        delete data.notificationSubscriptions;
       }
-console.log(newadata,'dataaaa');      
+  
       data['id'] = await this.generateSequentialId('users');
       data.createdBy = this.getCreatedBy(data);
       data.password = await getEncryptedPassword(data.password);
       data['avatar'] = getDefaulAvatarUrl(data.firstName, data.lastName);
-      console.log(data);
+  
+      console.log('Final user data before save:', JSON.stringify(data, null, 2));
+  
       const newUser = new this.usersModel(data);
       const result = await newUser.save();
       const res = new UserDto(result);
+  
       if (res.role === USER_ROLES.CLIENT) {
         await this.sendWelcomeText(res);
       }
-
+  
       res['token'] = await generateToken(result);
       return res;
     } catch (err) {
+      console.error('Error during addUser:', err);
+      if (err.code === 11000) {
+        console.error('Duplicate key error details:', err.keyValue);
+      }
       throw err;
     }
   }
+  
+  
+  
 
   async loginFacebook(
     profile: any,

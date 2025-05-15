@@ -19,3 +19,4 @@ const stripe = new Stripe('REMOVED_STRIPE_TEST_KEY', {
     console.error('Error message:', err.message);
   }
 })();
+DB_URL="mongodb+srv://test123:test123@rmsdb.vvere.mongodb.net/?retryWrites=true&w=majority&appName=rmsDB"

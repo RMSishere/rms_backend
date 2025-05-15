@@ -237,7 +237,7 @@ export class SubscriptionController {
 
   @Get('status')
   async getStatus(@Req() req) {
-    console.log(req.user);
+    console.log(req.user,'testtt');
     const user = await this.userModel
       .findOne({ id: req.user.id })
       .select('subscription')
