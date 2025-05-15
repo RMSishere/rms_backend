@@ -112,7 +112,7 @@
     "testEnvironment": "node"
   },
   "engines": {
-    "npm": "8.5.5",
-    "node": "16.15.0"
-  }
+    "node": "18.x",
+    "npm": "9.x"
+  }  
 }
