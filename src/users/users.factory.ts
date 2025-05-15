@@ -115,7 +115,7 @@ export class UserFactory extends BaseFactory {
       data.password = await getEncryptedPassword(data.password);
       data['avatar'] = getDefaulAvatarUrl(data.firstName, data.lastName);
       const newUser = new this.usersModel(data);
-      const result = await newUser.save({ ignoreDuplicates: true });
+      const result = await newUser.save();
       const res = new UserDto(result);
       if (res.role === USER_ROLES.CLIENT) {
         await this.sendWelcomeText(res);

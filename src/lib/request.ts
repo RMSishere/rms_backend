@@ -28,7 +28,7 @@ export interface Request extends Base {
   hiredAffiliate?: UserDto;
   price?: number;
   status?: string;
-  isActive?: string;
+  isActive?: boolean;
   requestType?: string;
   leads?: Array<any>;
   leadPrice?: number;

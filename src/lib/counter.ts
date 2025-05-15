@@ -1,4 +1,4 @@
 export interface Counter {
     id: string;
-    counter: string;
+    counter: number;
 }

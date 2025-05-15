@@ -9,7 +9,7 @@ import { weekOfMonth } from 'src/util';
 import { paginationLimit, REQUEST_STATUS, USER_ROLES } from '../config';
 import { PAYMENT_STATUS } from '../config/index';
 import { BaseFactory } from '../lib/base.factory';
-import { Counter, Payment, UserMiscInfo } from '../lib/index';
+import { Counter,Request, Payment, UserMiscInfo } from '../lib/index';
 import { UserFactory } from '../users/users.factory';
 import moment = require('moment');
 

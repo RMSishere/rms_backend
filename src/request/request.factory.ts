@@ -689,34 +689,38 @@ export class RequestFactory extends BaseFactory {
         .populate('hiredAffiliate');
       reviewData['id'] = await this.generateSequentialId('JobReview');
       reviewData['customer'] = request.requesterOwner;
-      reviewData['affiliate'] = request.hiredAffiliate.businessProfile;
-      reviewData['request'] = request;
+      reviewData['affiliate'] = {
+        ...request.hiredAffiliate.businessProfile,
+        firstName: request.hiredAffiliate.firstName,
+        lastName: request.hiredAffiliate.lastName,
+        avatar: request.hiredAffiliate.avatar,
+        email: request.hiredAffiliate.email,
+        _id: request.hiredAffiliate._id,
+      } as unknown as User;
+      
+            reviewData['request'] = request;
       reviewData.createdBy = this.getCreatedBy(user);
 
       const newReview = new this.jobReviewModel(reviewData);
       const res = await newReview.save();
       const jobReview = new JobReviewDto(res);
 
-      const {
-        ratingSum = 0,
-        ratingCount = 0,
-      } = await this.jobReviewModel.aggregate([
+      const aggregationResult = await this.jobReviewModel.aggregate([
         { $match: { affiliate: jobReview.affiliate } },
         {
           $group: {
             _id: null,
-            ratingSum: {
-              $sum: '$overAllRating',
-            },
-            ratingCount: {
-              $sum: 1,
-            },
+            ratingSum: { $sum: '$overAllRating' },
+            ratingCount: { $sum: 1 },
           },
         },
       ]);
+      
+      const { ratingSum = 0, ratingCount = 0 } = aggregationResult[0] || {};
+      
 
       await this.userModel.updateOne(
-        { _id: jobReview.affiliate },
+        { _id: jobReview.affiliate._id },
         {
           'businessProfile.rating':
             (ratingSum + jobReview.overAllRating) / (ratingCount + 1),

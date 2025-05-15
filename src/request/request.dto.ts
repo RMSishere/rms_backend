@@ -34,7 +34,7 @@ export class RequestDto extends BaseDto implements Request {
     this.price = request.price;
     this.status = request.status;
     this.status = request.status;
-    this.isActive = request.isActive;
+    this.isActive = Boolean(request.isActive);
     this.items = request.items;
     this.realtorConnectedWith = request.realtorConnectedWith;
     this.affiliateNotes = request.affiliateNotes;
@@ -73,7 +73,7 @@ export class RequestDto extends BaseDto implements Request {
   requesterOwner?: UserDto;
   price: number;
   status?: string;
-  isActive?: string;
+  isActive?: boolean;
   hiredAffiliate?: UserDto;
   requestType: string;
   leads?: Array<any>;

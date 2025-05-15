@@ -10,7 +10,7 @@ import { PaginatedData } from 'src/common/interfaces';
 import { GLOBAL_PREFIX, paginationLimit, USER_ROLES } from 'src/config';
 import { payPalClient } from 'src/payment/paypal';
 import { BaseFactory } from '../lib/base.factory';
-import { Counter, Payment, User } from '../lib/index';
+import { Counter, Payment, User,Request } from '../lib/index';
 import { PaymentDto } from './payment.dto';
 import paypal = require('@paypal/checkout-server-sdk');
 import paypalNodeSdk = require('paypal-node-sdk');
