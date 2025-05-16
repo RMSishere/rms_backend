@@ -29,7 +29,7 @@ const stripe = new Stripe(
   { apiVersion: '2025-04-30.basil' }
 );
 
-const STRIPE_WEBHOOK_SECRET = 'whsec_...'; // Set this from your Stripe dashboard
+const STRIPE_WEBHOOK_SECRET = 'whsec_eFeLRLlhDR3zZ3PGzuzbGZ9rptTeBwY0'; // Set this from your Stripe dashboard
 
 interface Subscription {
   type: string;
