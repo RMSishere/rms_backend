@@ -73,7 +73,7 @@
     "zipcodes-nearby": "^0.1.4"
   },
   "devDependencies": {
-    "@nestjs/cli": "^7.0.0",
+    "@nestjs/cli": "^7.6.0",
     "@nestjs/schematics": "^7.0.0",
     "@nestjs/testing": "^7.0.0",
     "@types/estree": "^1.0.7",
