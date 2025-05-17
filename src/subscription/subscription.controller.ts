@@ -67,7 +67,18 @@ export class SubscriptionController {
   getAffiliatePlans() {
     return AFFILIATE_PLANS;
   }
-
+  @Get('job-request-count')
+  async getJobRequestCount(@Req() req) {
+    const user = await this.userModel
+      .findOne({ id: req.user.id })
+      .select('subscription.jobRequestCountThisMonth')
+      .lean();
+  
+    return {
+      jobRequestCountThisMonth: user?.subscription?.jobRequestCountThisMonth || 0,
+    };
+  }
+  
   @Post('subscribe')
   async subscribe(@Req() req, @Body() body) {
     const { plan, billingType } = body;
@@ -291,7 +302,7 @@ export class SubscriptionController {
   @Post('webhook')
   async stripeWebhook(@Body() body: any, @Headers('stripe-signature') sig: string) {
     let event: Stripe.Event;
-
+console.log('hi');
     try {
       event = stripe.webhooks.constructEvent(body, sig, STRIPE_WEBHOOK_SECRET);
     } catch (err) {

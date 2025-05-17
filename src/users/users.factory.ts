@@ -111,6 +111,14 @@ export class UserFactory extends BaseFactory {
         }
       }
   
+      // Generate user ID first (needed for unique notification subscription titles)
+      data['id'] = await this.generateSequentialId('users');
+      console.log('Generated user id:', data['id']);
+  
+      data.createdBy = this.getCreatedBy(data);
+      data.password = await getEncryptedPassword(data.password);
+      data['avatar'] = getDefaulAvatarUrl(data.firstName, data.lastName);
+  
       // Fetch and sanitize notification subscriptions
       const newadata = await this.notificationSubscriptionFactory.getAllNotificationSubscriptions({}, data);
       console.log('Generated notificationSubscriptions:', JSON.stringify(newadata, null, 2));
@@ -119,30 +127,27 @@ export class UserFactory extends BaseFactory {
         const seen = new Set<string>();
   
         const sanitized = newadata
-          .filter(sub => !!sub) // Remove falsy entries
-          .map(sub => {
+          .filter(sub => !!sub)
+          .map((sub, index) => {
             // Assign unique ID if missing
             if (!sub.id) sub.id = randomUUID();
   
-            // Skip duplicates and nulls
+            // Assign a unique title if missing to avoid duplicate nulls
+            if (!sub.title) sub.title = `user-${data.id}-title-${index + 1}`;
+  
+            // Prevent duplicates
             if (!sub.id || seen.has(sub.id)) return null;
   
             seen.add(sub.id);
             return sub;
           })
-          .filter(Boolean); // Remove nulls from map step
+          .filter(Boolean);
   
         console.log('Sanitized notificationSubscriptions count:', sanitized.length);
         data.notificationSubscriptions = sanitized;
       } else {
-        // Explicitly remove the field if empty to avoid implicit null insertions
         delete data.notificationSubscriptions;
       }
-  
-      data['id'] = await this.generateSequentialId('users');
-      data.createdBy = this.getCreatedBy(data);
-      data.password = await getEncryptedPassword(data.password);
-      data['avatar'] = getDefaulAvatarUrl(data.firstName, data.lastName);
   
       console.log('Final user data before save:', JSON.stringify(data, null, 2));
   
@@ -734,7 +739,10 @@ export class UserFactory extends BaseFactory {
   }
 
   async checkUserExist(filter: any): Promise<boolean> {
+    console.log(filter,'filter');
     const usersCount = await this.usersModel.countDocuments(filter);
+    const user = await this.usersModel.findOne(filter);
+    console.log(usersCount,user,'dataaaa');
     if (usersCount) {
       return true;
     } else {
@@ -1008,6 +1016,28 @@ console.log(user);
       throw err;
     }
   }
+  async approveBusinessProfileByIdOnly(id: string): Promise<User> {
+    try {
+      const filter = { _id: id };
+      const newValue = {
+        'businessProfile.isApproved': true,
+        'businessProfile.approvedDate': new Date(),
+      };
+  
+      const updatedUser = await this.usersModel.findOneAndUpdate(
+        filter,
+        { $set: newValue },
+        { new: true },
+      );
+      const res = new UserDto(updatedUser);
+  
+      return res;
+    } catch (err) {
+      throw err;
+    }
+  }
+  
+  
   async getAreaServiceAndNearByZipCodes(
     areaServices: Array<{ zipCode: string }>,
     serviceCoverage: number,

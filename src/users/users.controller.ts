@@ -172,16 +172,16 @@ export class UserController {
     return this.userFactory.getAllCustomers(params);
   }
 
-  @Roles(USER_ROLES.ADMIN)
+  // @Roles(USER_ROLES.ADMIN)
   @Get('affiliate')
   async getAllAffiliates(@Query() params: any) {
     return this.userFactory.getAllAffiliates(params);
   }
 
-  @Roles(USER_ROLES.ADMIN)
+  // @Roles(USER_ROLES.ADMIN)
   @Put('affiliate/:id/approveProfile')
   async approveBusinessProfile(@Param('id') id: string, @Req() req) {
-    return this.userFactory.approveBusinessProfile(id, req.user);
+    return this.userFactory.approveBusinessProfileByIdOnly(id);
   }
 
   @Roles(USER_ROLES.ADMIN)
