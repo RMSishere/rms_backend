@@ -50,6 +50,7 @@ import { getEncryptedPassword } from '../util/index';
 import { UserDto } from './users.dto';
 import moment = require('moment-timezone');
 import Axios from 'axios';
+import { HttpException, HttpStatus } from '@nestjs/common';
 
 @Injectable()
 export class UserFactory extends BaseFactory {
@@ -378,6 +379,8 @@ export class UserFactory extends BaseFactory {
     }
   }
 
+  // import { HttpException, HttpStatus } from '@nestjs/common';
+
   async login(
     email: string,
     password: string,
@@ -391,14 +394,12 @@ export class UserFactory extends BaseFactory {
       if (role) {
         query.role = role;
       }
-      const user = await this.usersModel
-        .findOne(query)
-        .exec();
+      const user = await this.usersModel.findOne(query).exec();
       let isPasswordCorrect = false;
       if (user) {
         isPasswordCorrect = await verifyPassword(password, user.password);
       }
-
+  
       if (user && isPasswordCorrect) {
         const newUser = new UserDto(user);
         // check if user logged in with new device
@@ -412,34 +413,41 @@ export class UserFactory extends BaseFactory {
           const newValue = { $set: { devices: newDevices } };
           await this.usersModel.updateOne(condition, newValue);
         }
-
+  
         newUser['token'] = await generateToken(user);
         return newUser;
       }
-
+  
       // check if wordpress user
       try {
         const res = await Axios.post(process.env.WP_LOGIN_URL, {
           username: email,
           password
-        })
-
+        });
+  
         if (res.data?.token) {
           const wpData = res.data;
-          return await this.loginWithWordpress(wpData, password)
+          return await this.loginWithWordpress(wpData, password);
         }
       } catch (error) {
         if (error?.response?.data?.data?.status === 403) {
-          return new APIMessage('Invalid Credentials!', APIMessageTypes.ERROR);
+          throw new HttpException(
+            new APIMessage('Invalid Credentials!', APIMessageTypes.ERROR),
+            HttpStatus.UNAUTHORIZED
+          );
         }
         throw error;
       }
-
-      return new APIMessage('Invalid Credentials!', APIMessageTypes.ERROR);
+  
+      throw new HttpException(
+        new APIMessage('Invalid Credentials!', APIMessageTypes.ERROR),
+        HttpStatus.UNAUTHORIZED
+      );
     } catch (err) {
       throw err;
     }
   }
+  
 
   async getUserProfile(id: string): Promise<User> {
     try {
