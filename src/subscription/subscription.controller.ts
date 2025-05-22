@@ -126,29 +126,28 @@ export class SubscriptionController {
   
       console.log('Using Stripe price ID:', priceId);
   
-      // Create or reuse Stripe customer logic could be improved here,
-      // but for now create new customer every time (or check for existing if you want).
+      // Create or reuse Stripe customer
       const customer = await stripe.customers.create({
         email: user.email,
         metadata: { userId: user.id.toString() },
       });
       console.log('Created Stripe customer:', customer.id);
   
-      // Create subscription WITHOUT expand (simpler and avoids errors)
-      const subscription = await stripe.subscriptions.create({
+      // Create Stripe Checkout session for subscription payment
+      const session = await stripe.checkout.sessions.create({
+        mode: 'subscription',
         customer: customer.id,
-        items: [{ price: priceId }],
-        payment_behavior: 'default_incomplete',
-        // No expand to avoid TS and API expand errors
+        line_items: [{ price: priceId, quantity: 1 }],
+        success_url: `https://your-frontend-url.com/subscription-success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `https://your-frontend-url.com/subscription-cancelled`,
+        metadata: {
+          userId: user.id.toString(),
+          plan,
+          billingType,
+        },
       });
-      console.log('Created Stripe subscription:', subscription.id);
   
-      // Return subscriptionId and no clientSecret here.
-      // The clientSecret is available in the payment_intent of the latest invoice,
-      // but since you have a webhook setup that will update status on payment success/failure,
-      // you can handle payment confirmation client-side via Stripe Checkout or PaymentIntent separately.
-  
-      // Update user subscription with status INACTIVE; webhook will update on payment success
+      // Calculate expiry date (for your DB)
       const expiresAt = new Date();
       if (billingType === 'MONTHLY') {
         expiresAt.setMonth(expiresAt.getMonth() + 1);
@@ -158,12 +157,13 @@ export class SubscriptionController {
         console.warn('Unknown billingType for expiry calculation:', billingType);
       }
   
+      // Save subscription record with status INACTIVE; webhook updates on payment success
       await this.userModel.updateOne(
         { _id: user._id },
         {
           $set: {
             subscription: {
-              subscriptionId: subscription.id,
+              subscriptionId: '', // Will update after webhook confirms subscription
               customerId: customer.id,
               type: plan,
               billingType,
@@ -183,14 +183,15 @@ export class SubscriptionController {
       console.log('User subscription updated in DB for user:', user._id);
   
       return {
-        subscriptionId: subscription.id,
-        message: 'Subscription created. Complete payment on client side.',
+        checkoutUrl: session.url,
+        message: 'Checkout session created, complete payment to activate subscription.',
       };
     } catch (error) {
       console.error('Error in subscribe:', error);
       throw error;
     }
   }
+  
   
   
   
