@@ -116,7 +116,7 @@ export class SubscriptionController {
       email: user.email,
       metadata: { userId: user.id.toString() },
     });
-  
+  console.log("dataaaa",customer.id,priceId,)
     const subscription = await stripe.subscriptions.create({
       customer: customer.id,
       items: [{ price: priceId }],
