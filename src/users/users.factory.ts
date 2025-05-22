@@ -126,7 +126,7 @@ export class UserFactory extends BaseFactory {
         };
   
         await Axios.post(
-          'https://runmysale.com/my-account/wp-json/affiliate-subscription/v1/create_user',
+          'https://runmysale.com/wp-json/affiliate-subscription/v1/create_user',
           affiliatePayload,
           { headers: { 'Content-Type': 'application/json' } },
         );
