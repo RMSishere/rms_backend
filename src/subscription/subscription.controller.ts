@@ -116,14 +116,14 @@ export class SubscriptionController {
       email: user.email,
       metadata: { userId: user.id.toString() },
     });
-  console.log("dataaaa",customer.id,priceId,)
+  console.log("dataaaa",customer.id,priceId);
     const subscription = await stripe.subscriptions.create({
       customer: customer.id,
       items: [{ price: priceId }],
       payment_behavior: 'default_incomplete',
       expand: ['latest_invoice.payment_intent'],
     });
-  
+  console.log("dataaa2",subscription);
     const invoice = subscription.latest_invoice as Stripe.Invoice & {
       payment_intent?: Stripe.PaymentIntent;
     };
