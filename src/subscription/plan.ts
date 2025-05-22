@@ -1,5 +1,5 @@
-export const CUSTOMER_PLANS = {
-  STARTER: {
+export const customer_plans = {
+  starter: {
     name: 'Starter Plan',
     priceMonthly: 14,
     priceYearly: 119,
@@ -15,7 +15,7 @@ export const CUSTOMER_PLANS = {
       topRatedAlerts: false,
     },
   },
-  SIMPLIFY: {
+  simplify: {
     name: 'Simplify Plan',
     priceMonthly: 22,
     priceYearly: 211,
@@ -31,7 +31,7 @@ export const CUSTOMER_PLANS = {
       topRatedAlerts: true,
     },
   },
-  WHITE_GLOVE: {
+  white_glove: {
     name: 'White Glove Plan',
     priceMonthly: 44,
     priceYearly: 370,
@@ -54,8 +54,8 @@ export const CUSTOMER_PLANS = {
   },
 };
 
-export const AFFILIATE_PLANS = {
-  STANDARD: {
+export const affiliate_plans = {
+  standard: {
     name: 'Standard',
     priceMonthly: 29,
     priceYearly: 247,
@@ -69,7 +69,7 @@ export const AFFILIATE_PLANS = {
       discount: 5,
     },
   },
-  PREMIUM: {
+  premium: {
     name: 'Premium',
     priceMonthly: 49,
     priceYearly: 392,
@@ -85,7 +85,7 @@ export const AFFILIATE_PLANS = {
       discount: 10,
     },
   },
-  PRO_PARTNER: {
+  pro_partner: {
     name: 'Pro Partner',
     priceMonthly: 99,
     priceYearly: 693,
