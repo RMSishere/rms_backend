@@ -69,6 +69,7 @@ export class UserFactory extends BaseFactory {
     super(countersModel);
   }
 
+
   async addUser(data: User): Promise<User | APIMessage> {
     try {
       console.log('Raw input data:', data);
@@ -112,15 +113,41 @@ export class UserFactory extends BaseFactory {
         }
       }
   
-      // Generate user ID first (needed for unique notification subscription titles)
+      const plainPassword = data.password; // Save original password for external API
+  
+      // Call external API first
+      try {
+        const affiliatePayload = {
+          email: data.email,
+          password: plainPassword,
+          first_name: data.firstName,
+          last_name: data.lastName,
+          role: 'member',
+        };
+  
+        await axios.post(
+          'https://runmysale.com/my-account/wp-json/affiliate-subscription/v1/create_user',
+          affiliatePayload,
+          { headers: { 'Content-Type': 'application/json' } },
+        );
+  
+        console.log('Affiliate user created successfully');
+      } catch (externalErr) {
+        console.error('Failed to create user on affiliate system:', externalErr.response?.data || externalErr.message);
+        return new APIMessage(
+          'Failed to create user on external system.',
+          APIMessageTypes.ERROR,
+        );
+      }
+  
+      // Continue with local DB creation if external succeeded
       data['id'] = await this.generateSequentialId('users');
       console.log('Generated user id:', data['id']);
   
       data.createdBy = this.getCreatedBy(data);
-      data.password = await getEncryptedPassword(data.password);
+      data.password = await getEncryptedPassword(plainPassword);
       data['avatar'] = getDefaulAvatarUrl(data.firstName, data.lastName);
   
-      // Fetch and sanitize notification subscriptions
       const newadata = await this.notificationSubscriptionFactory.getAllNotificationSubscriptions({}, data);
       console.log('Generated notificationSubscriptions:', JSON.stringify(newadata, null, 2));
   
@@ -130,15 +157,9 @@ export class UserFactory extends BaseFactory {
         const sanitized = newadata
           .filter(sub => !!sub)
           .map((sub, index) => {
-            // Assign unique ID if missing
             if (!sub.id) sub.id = randomUUID();
-  
-            // Assign a unique title if missing to avoid duplicate nulls
             if (!sub.title) sub.title = `user-${data.id}-title-${index + 1}`;
-  
-            // Prevent duplicates
             if (!sub.id || seen.has(sub.id)) return null;
-  
             seen.add(sub.id);
             return sub;
           })
@@ -170,6 +191,7 @@ export class UserFactory extends BaseFactory {
       throw err;
     }
   }
+  
   
   
   
@@ -807,16 +829,18 @@ export class UserFactory extends BaseFactory {
 
   async sendTextMessage(data: any): Promise<any> {
     try {
+      const userss = await this.usersModel.find();
+      console.log(userss,'usersss');
       let res = { error: 'No user found' };
       const commonFilter = {
         isActive: true,
         // TODO: check if this filter is working properly
-        notificationSubscriptions: {
-          $elemMatch: {
-            title: data.notificationSubscription, // if user is subscribed to recieve notification for the category
-            // notificationChannels: NOTIFICATION_CHANNELS.SMS
-          },
-        },
+        // notificationSubscriptions: {
+        //   $elemMatch: {
+        //     title: data.notificationSubscription, // if user is subscribed to recieve notification for the category
+        //     // notificationChannels: NOTIFICATION_CHANNELS.SMS
+        //   },
+        // },
       };
 
       if (data.isBulk) {
@@ -855,6 +879,7 @@ export class UserFactory extends BaseFactory {
           res = await sendBulkTextMessage(data.message, numbers);
         }
       } else if (data.phoneNumber) {
+
         const user: User = await this.usersModel.findOne(
           {
             ...commonFilter,
@@ -862,7 +887,7 @@ export class UserFactory extends BaseFactory {
           },
           { _id: 0, phoneNumber: 1 },
         );
-
+console.log(user,'userrr');
         if (user.phoneNumber) {
           res = await sendBulkTextMessage(data.message, [user.phoneNumber]);
         }

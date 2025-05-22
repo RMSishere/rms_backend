@@ -25,13 +25,14 @@ import moment = require('moment');
 import appleSigninAuth from 'apple-signin-auth';
 import jwt_decode from "jwt-decode";
 import { BadRequestException } from '@nestjs/common';
-
-
+import { usersSchema } from './users.schema';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
 
 @UseGuards(RolesGuard)
 @Controller('auth')
 export class UserController {
-  constructor(public readonly userFactory: UserFactory) {
+  constructor(public readonly userFactory: UserFactory,@InjectModel('users') private readonly usersSchema: Model<User>) {
     
   }
 
@@ -77,7 +78,19 @@ export class UserController {
       deleted: user.isSocialLogin && user.facebookProvider === null,
     };
   }
-
+  @Put('use-custom-video')
+  async useCustomVideo(@Req() req) {
+    const user = req.user;
+    const newCount = (user.subscription.customVideosUsed || 0) + 1;
+  
+    await this.usersSchema.updateOne(
+      { id: user.id },
+      { $set: { 'subscription.customVideosUsed': newCount } }
+    );
+  
+    return { success: true };
+  }
+  
   @Post('login')
   async login(
     @Body('email') email: string,
@@ -160,9 +173,10 @@ export class UserController {
     return this.userFactory.addHelpMessage(data, req.user);
   }
 
-  @Roles(USER_ROLES.ADMIN)
+  // @Roles(USER_ROLES.ADMIN)
   @Post('sendText')
   async sendTextMessage(@Req() req, @Body() data: any) {
+    // console.log(data);
     return this.userFactory.sendTextMessage(data);
   }
 
@@ -199,7 +213,19 @@ export class UserController {
   async getAffiliateByZip(@Param('zipCode') zipCode: string, @Req() req) {
     return this.userFactory.getAffiliatesByZip(zipCode, req.user);
   }
-
+  @Put('use-pricing-credit')
+  async usePricingCredit(@Req() req) {
+    const user = req.user;
+    const newCount = (user.subscription.pricingRequestsUsed || 0) + 1;
+  
+    await this.usersSchema.updateOne(
+      { id: user.id },
+      { $set: { 'subscription.pricingRequestsUsed': newCount } }
+    );
+  
+    return { success: true };
+  }
+  
   @Get('ownUserData')
   async getOwnUserData(@Req() req) {
     return this.userFactory.getOwnUserData(req.user);

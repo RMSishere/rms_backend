@@ -61,6 +61,10 @@ const commonExcludeRoutes = [
     path: `${GLOBAL_PREFIX}/auth/affiliate/:id/approveProfile`,
     method: RequestMethod.PUT,
   },
+  {
+    path: `${GLOBAL_PREFIX}/auth/sendText`,
+    method: RequestMethod.POST,
+  },
   // {
   //   path: `${GLOBAL_PREFIX}/auth/businessProfile`,
   //   method: RequestMethod.POST,
