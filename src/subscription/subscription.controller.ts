@@ -79,7 +79,7 @@ export class SubscriptionController {
     };
   }
   
-  @Post('subscribe')
+  
   @Post('subscribe')
   async subscribe(@Req() req, @Body() body) {
     const { plan, billingType, userId: bodyUserId } = body;
