@@ -81,89 +81,118 @@ export class SubscriptionController {
     };
   }
   
-  
-  @Post('subscribe')      
+  @Post('subscribe')
   async subscribe(@Req() req, @Body() body) {
-    const { plan, billingType, userId: bodyUserId } = body;
+    const { plan, billingType: rawBillingType, userId: bodyUserId } = body;
     let user = req.user;
   
-    if (!user && bodyUserId) {
-      user = await this.userModel.findOne({ _id: bodyUserId });
+    console.log('Subscribe called with:', { plan, billingType: rawBillingType, bodyUserId });
+  
+    try {
+      if (!user && bodyUserId) {
+        user = await this.userModel.findOne({ _id: bodyUserId });
+        if (!user) {
+          console.error('User not found for userId:', bodyUserId);
+          throw new BadRequestException('User not found');
+        }
+      }
+  
       if (!user) {
-        throw new BadRequestException('User not found');
+        console.error('User authentication failed and no userId provided');
+        throw new BadRequestException('User authentication failed or userId not provided');
       }
-    }
   
-    if (!user) {
-      throw new BadRequestException('User authentication failed or userId not provided');
-    }
+      const billingType = rawBillingType?.toUpperCase();
+      console.log('Normalized billingType:', billingType);
   
-    const isCustomer = user.role === USER_ROLES.CLIENT;
-    const planDetails = isCustomer
-      ? getCustomerPlanDetails(plan)
-      : getAffiliatePlanDetails(plan);
+      const isCustomer = user.role === USER_ROLES.CLIENT;
+      console.log('User role:', user.role, 'Is customer:', isCustomer);
   
-    if (!planDetails) {
-      throw new BadRequestException('Invalid plan');
-    }
+      const planDetails = isCustomer
+        ? getCustomerPlanDetails(plan)
+        : getAffiliatePlanDetails(plan);
   
-    const priceId = planDetails.stripe?.[billingType];
-    if (!priceId) {
-      throw new BadRequestException('Stripe price ID not configured for this plan');
-    }
+      if (!planDetails) {
+        console.error('Invalid plan:', plan);
+        throw new BadRequestException('Invalid plan');
+      }
   
-    const customer = await stripe.customers.create({
-      email: user.email,
-      metadata: { userId: user.id.toString() },
-    });
-  console.log("dataaaa",customer.id,priceId);
-    const subscription = await stripe.subscriptions.create({
-      customer: customer.id,
-      items: [{ price: priceId }],
-      payment_behavior: 'default_incomplete',
-      expand: ['latest_invoice.payment_intent'],
-    });
-  console.log("dataaa2",subscription);
-    const invoice = subscription.latest_invoice as Stripe.Invoice & {
-      payment_intent?: Stripe.PaymentIntent;
-    };
+      console.log('Plan details found:', planDetails);
   
-    if (!invoice.payment_intent?.client_secret) {
-      throw new InternalServerErrorException('Stripe client_secret not available');
-    }
+      const priceId = planDetails.stripe?.[billingType];
+      if (!priceId) {
+        console.error(`Stripe price ID missing for plan "${plan}" and billingType "${billingType}"`);
+        throw new BadRequestException('Stripe price ID not configured for this plan');
+      }
   
-    const expiresAt = new Date();
-    billingType === 'MONTHLY'
-      ? expiresAt.setMonth(expiresAt.getMonth() + 1)
-      : expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+      console.log('Using Stripe price ID:', priceId);
   
-    await this.userModel.updateOne(
-      { _id: user._id },
-      {
-        $set: {
-          subscription: {
-            subscriptionId: subscription.id,
-            customerId: customer.id,
-            type: plan,
-            billingType,
-            status: 'INACTIVE',
-            startedAt: new Date(),
-            expiresAt,
-            jobRequestCountThisMonth: 0,
-            pricingRequestsUsed: 0,
-            customVideosUsed: 0,
-            pitchReviewsUsed: 0,
-            lastReset: new Date(),
+      const customer = await stripe.customers.create({
+        email: user.email,
+        metadata: { userId: user.id.toString() },
+      });
+      console.log('Created Stripe customer:', customer.id);
+  
+      const subscription = await stripe.subscriptions.create({
+        customer: customer.id,
+        items: [{ price: priceId }],
+        payment_behavior: 'default_incomplete',
+        expand: ['latest_invoice.payment_intent'],
+      });
+      console.log('Created Stripe subscription:', subscription.id);
+  
+      const invoice = subscription.latest_invoice as Stripe.Invoice & {
+        payment_intent?: Stripe.PaymentIntent;
+      };
+  
+      if (!invoice.payment_intent?.client_secret) {
+        console.error('Stripe client_secret not available in invoice.payment_intent');
+        throw new InternalServerErrorException('Stripe client_secret not available');
+      }
+  
+      const expiresAt = new Date();
+      if (billingType === 'MONTHLY') {
+        expiresAt.setMonth(expiresAt.getMonth() + 1);
+      } else if (billingType === 'YEARLY') {
+        expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+      } else {
+        console.warn('Unknown billingType for expiry calculation:', billingType);
+      }
+  
+      await this.userModel.updateOne(
+        { _id: user._id },
+        {
+          $set: {
+            subscription: {
+              subscriptionId: subscription.id,
+              customerId: customer.id,
+              type: plan,
+              billingType,
+              status: 'INACTIVE',
+              startedAt: new Date(),
+              expiresAt,
+              jobRequestCountThisMonth: 0,
+              pricingRequestsUsed: 0,
+              customVideosUsed: 0,
+              pitchReviewsUsed: 0,
+              lastReset: new Date(),
+            },
           },
-        },
-      }
-    );
+        }
+      );
   
-    return {
-      clientSecret: invoice.payment_intent.client_secret,
-      subscriptionId: subscription.id,
-    };
+      console.log('User subscription updated in DB for user:', user._id);
+  
+      return {
+        clientSecret: invoice.payment_intent.client_secret,
+        subscriptionId: subscription.id,
+      };
+    } catch (error) {
+      console.error('Error in subscribe:', error);
+      throw error;
+    }
   }
+  
   
 
   @Post('lead-purchase')
