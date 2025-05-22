@@ -137,16 +137,17 @@ export class SubscriptionController {
         customer: customer.id,
         items: [{ price: priceId }],
         payment_behavior: 'default_incomplete',
-        expand: ['latest_invoice.payment_intent'],
+        expand: ['latest_invoice', 'pending_setup_intent'],
       });
       console.log('Created Stripe subscription:', subscription.id);
   
-      const invoice = subscription.latest_invoice as Stripe.Invoice & {
-        payment_intent?: Stripe.PaymentIntent;
-      };
+      const invoice = subscription.latest_invoice as Stripe.Invoice;
+      const clientSecret =
+        invoice?.payment_intent?.client_secret ||
+        subscription.pending_setup_intent?.client_secret;
   
-      if (!invoice.payment_intent?.client_secret) {
-        console.error('Stripe client_secret not available in invoice.payment_intent');
+      if (!clientSecret) {
+        console.error('Stripe client_secret not available in invoice.payment_intent or pending_setup_intent');
         throw new InternalServerErrorException('Stripe client_secret not available');
       }
   
@@ -184,7 +185,7 @@ export class SubscriptionController {
       console.log('User subscription updated in DB for user:', user._id);
   
       return {
-        clientSecret: invoice.payment_intent.client_secret,
+        clientSecret,
         subscriptionId: subscription.id,
       };
     } catch (error) {
@@ -192,6 +193,7 @@ export class SubscriptionController {
       throw error;
     }
   }
+  
   
   
 
