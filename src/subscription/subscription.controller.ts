@@ -23,6 +23,7 @@ import { Roles } from 'src/common/decorators/roles.decorator';
 import { USER_ROLES } from 'src/config';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import Stripe from 'stripe';
+import { Types } from 'mongoose';
 
 const stripe = new Stripe(
   'REMOVED_STRIPE_TEST_KEY',
@@ -47,7 +48,8 @@ interface Subscription {
 }
 
 interface User {
-  id: number;
+  _id: Types.ObjectId | string; // MongoDB ObjectId
+  id?: any;
   email: string;
   role: number;
   subscription?: Subscription;
@@ -86,7 +88,7 @@ export class SubscriptionController {
     let user = req.user;
   
     if (!user && bodyUserId) {
-      user = await this.userModel.findOne({ id: bodyUserId });
+      user = await this.userModel.findOne({ _id: bodyUserId });
       if (!user) {
         throw new BadRequestException('User not found');
       }
@@ -136,7 +138,7 @@ export class SubscriptionController {
       : expiresAt.setFullYear(expiresAt.getFullYear() + 1);
   
     await this.userModel.updateOne(
-      { id: user.id },
+      { _id: user._id },
       {
         $set: {
           subscription: {
