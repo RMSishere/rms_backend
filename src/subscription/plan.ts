@@ -44,7 +44,7 @@ export const CUSTOMER_PLANS = {
     
     export const AFFILIATE_PLANS = {
       STANDARD: {
-        name: 'Standard Plan',
+        name: 'Standard',
         priceMonthly: 29,
         priceYearly: 247,
         features: {
@@ -54,7 +54,7 @@ export const CUSTOMER_PLANS = {
         },
       },
       PREMIUM: {
-        name: 'Premium Plan',
+        name: 'Premium',
         priceMonthly: 49,
         priceYearly: 392,
         features: {
@@ -66,7 +66,7 @@ export const CUSTOMER_PLANS = {
         },
       },
       PRO_PARTNER: {
-        name: 'Pro Partner Plan',
+        name: 'Pro Partner',
         priceMonthly: 99,
         priceYearly: 693,
         features: {
