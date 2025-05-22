@@ -132,40 +132,40 @@ export class SubscriptionController {
       });
       console.log('Created Stripe customer:', customer.id);
   
-      // Create subscription without expand payment_intent since Stripe says it doesn't exist
+      // Create subscription WITHOUT expand
       const subscription = await stripe.subscriptions.create({
         customer: customer.id,
         items: [{ price: priceId }],
         payment_behavior: 'default_incomplete',
-        expand: ['latest_invoice'], // removed 'latest_invoice.payment_intent' or 'pending_setup_intent'
       });
       console.log('Created Stripe subscription:', subscription.id);
   
-      const invoice = subscription.latest_invoice as Stripe.Invoice;
-  
-      // Try to retrieve payment_intent separately if needed
-      let clientSecret: string | undefined;
-  
-      if (invoice && typeof invoice === 'object' && 'payment_intent' in invoice && invoice.payment_intent && typeof invoice.payment_intent === 'object') {
-        clientSecret = (invoice.payment_intent as Stripe.PaymentIntent).client_secret;
-        console.log('Got client_secret from invoice.payment_intent');
+      // Retrieve latest invoice explicitly
+      if (!subscription.latest_invoice) {
+        console.error('No latest_invoice found in subscription');
+        throw new InternalServerErrorException('Subscription invoice not found');
       }
   
-      if (!clientSecret) {
-        // If client_secret still not found, attempt to fetch payment intent by invoice.payment_intent ID
-        if (invoice && typeof invoice === 'object' && 'payment_intent' in invoice && typeof invoice.payment_intent === 'string') {
-          const paymentIntentId = invoice.payment_intent;
-          console.log('Fetching payment intent separately with ID:', paymentIntentId);
-          const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
-          clientSecret = paymentIntent.client_secret;
-        }
+      const invoice = await stripe.invoices.retrieve(subscription.latest_invoice.toString());
+      console.log('Retrieved invoice:', invoice.id);
+  
+      if (!invoice.payment_intent) {
+        console.error('No payment_intent found in invoice');
+        throw new InternalServerErrorException('Invoice payment intent not found');
       }
   
-      if (!clientSecret) {
-        console.error('Stripe client_secret not available in invoice.payment_intent or fetched payment intent');
-        throw new InternalServerErrorException('Stripe client_secret not available');
+      // Retrieve payment intent explicitly
+      const paymentIntent = await stripe.paymentIntents.retrieve(invoice.payment_intent.toString());
+      console.log('Retrieved payment intent:', paymentIntent.id);
+  
+      if (!paymentIntent.client_secret) {
+        console.error('No client_secret found in payment intent');
+        throw new InternalServerErrorException('Payment intent client_secret not found');
       }
   
+      const clientSecret = paymentIntent.client_secret;
+  
+      // Calculate expiry date based on billing type
       const expiresAt = new Date();
       if (billingType === 'MONTHLY') {
         expiresAt.setMonth(expiresAt.getMonth() + 1);
@@ -175,6 +175,7 @@ export class SubscriptionController {
         console.warn('Unknown billingType for expiry calculation:', billingType);
       }
   
+      // Update user subscription in DB
       await this.userModel.updateOne(
         { _id: user._id },
         {
@@ -208,6 +209,7 @@ export class SubscriptionController {
       throw error;
     }
   }
+  
   
   
   
