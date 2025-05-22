@@ -132,11 +132,12 @@ export class SubscriptionController {
       });
       console.log('Created Stripe customer:', customer.id);
   
+      // NOTE: Expand only 'latest_invoice' and 'pending_setup_intent' (no nested payment_intent)
       const subscription = await stripe.subscriptions.create({
         customer: customer.id,
         items: [{ price: priceId }],
         payment_behavior: 'default_incomplete',
-        expand: ['latest_invoice.payment_intent', 'pending_setup_intent'],
+        expand: ['latest_invoice', 'pending_setup_intent'],
       });
       console.log('Created Stripe subscription:', subscription.id);
   
@@ -148,6 +149,7 @@ export class SubscriptionController {
   
       let clientSecret: string | undefined;
   
+      // payment_intent might be missing in some Stripe responses, check carefully
       if (invoice?.payment_intent && invoice.payment_intent.client_secret) {
         clientSecret = invoice.payment_intent.client_secret;
       } else if (
@@ -205,6 +207,7 @@ export class SubscriptionController {
       throw error;
     }
   }
+  
   
 
   
