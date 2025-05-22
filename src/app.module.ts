@@ -28,6 +28,7 @@ import { ZipCodeSearchModule } from './zipCodeSearch/zipCodeSearch.module';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
 import { ScheduleModule } from '@nestjs/schedule';
+import { SubscriptionController } from './subscription/subscription.controller'; // adjust path as needed
 
 const commonExcludeRoutes = [
   { path: `${GLOBAL_PREFIX}`, method: RequestMethod.GET },
@@ -116,7 +117,7 @@ const commonExcludeRoutes = [
       autoIndex: false, // disables auto index creation
     }),
   ],
-  controllers: [AppController],
+  controllers: [AppController,SubscriptionController],
   providers: [AppService],
 })
 export class AppModule implements NestModule {

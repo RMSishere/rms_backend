@@ -2,7 +2,7 @@ export const paginationLimit = 10;
 
 export * from './services';
 
-export const GLOBAL_PREFIX = 'https://runmysale.herokuapp.com/api/v1';
+export const GLOBAL_PREFIX = 'api/v1';
 
 export const USER_ROLES = {
   ADMIN: 1,
