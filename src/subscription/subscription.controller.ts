@@ -132,36 +132,37 @@ export class SubscriptionController {
       });
       console.log('Created Stripe customer:', customer.id);
   
-      // NOTE: Expand only 'latest_invoice' and 'pending_setup_intent' (no nested payment_intent)
+      // Create subscription without expand payment_intent since Stripe says it doesn't exist
       const subscription = await stripe.subscriptions.create({
         customer: customer.id,
         items: [{ price: priceId }],
         payment_behavior: 'default_incomplete',
-        expand: ['latest_invoice', 'pending_setup_intent'],
+        expand: ['latest_invoice'], // removed 'latest_invoice.payment_intent' or 'pending_setup_intent'
       });
       console.log('Created Stripe subscription:', subscription.id);
   
-      const invoice = subscription.latest_invoice as Stripe.Invoice & {
-        payment_intent?: Stripe.PaymentIntent;
-      };
+      const invoice = subscription.latest_invoice as Stripe.Invoice;
   
-      const pendingSetupIntent = subscription.pending_setup_intent;
-  
+      // Try to retrieve payment_intent separately if needed
       let clientSecret: string | undefined;
   
-      // payment_intent might be missing in some Stripe responses, check carefully
-      if (invoice?.payment_intent && invoice.payment_intent.client_secret) {
-        clientSecret = invoice.payment_intent.client_secret;
-      } else if (
-        pendingSetupIntent &&
-        typeof pendingSetupIntent !== 'string' &&
-        'client_secret' in pendingSetupIntent
-      ) {
-        clientSecret = pendingSetupIntent.client_secret;
+      if (invoice && typeof invoice === 'object' && 'payment_intent' in invoice && invoice.payment_intent && typeof invoice.payment_intent === 'object') {
+        clientSecret = (invoice.payment_intent as Stripe.PaymentIntent).client_secret;
+        console.log('Got client_secret from invoice.payment_intent');
       }
   
       if (!clientSecret) {
-        console.error('Stripe client_secret not available in invoice.payment_intent or pending_setup_intent');
+        // If client_secret still not found, attempt to fetch payment intent by invoice.payment_intent ID
+        if (invoice && typeof invoice === 'object' && 'payment_intent' in invoice && typeof invoice.payment_intent === 'string') {
+          const paymentIntentId = invoice.payment_intent;
+          console.log('Fetching payment intent separately with ID:', paymentIntentId);
+          const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+          clientSecret = paymentIntent.client_secret;
+        }
+      }
+  
+      if (!clientSecret) {
+        console.error('Stripe client_secret not available in invoice.payment_intent or fetched payment intent');
         throw new InternalServerErrorException('Stripe client_secret not available');
       }
   
@@ -207,6 +208,7 @@ export class SubscriptionController {
       throw error;
     }
   }
+  
   
   
 
