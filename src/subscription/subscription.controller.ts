@@ -80,49 +80,61 @@ export class SubscriptionController {
   }
   
   @Post('subscribe')
+  @Post('subscribe')
   async subscribe(@Req() req, @Body() body) {
-    const { plan, billingType } = body;
-    const user = req.user;
-
+    const { plan, billingType, userId: bodyUserId } = body;
+    let user = req.user;
+  
+    if (!user && bodyUserId) {
+      user = await this.userModel.findOne({ id: bodyUserId });
+      if (!user) {
+        throw new BadRequestException('User not found');
+      }
+    }
+  
+    if (!user) {
+      throw new BadRequestException('User authentication failed or userId not provided');
+    }
+  
     const isCustomer = user.role === USER_ROLES.CLIENT;
     const planDetails = isCustomer
       ? getCustomerPlanDetails(plan)
       : getAffiliatePlanDetails(plan);
-
+  
     if (!planDetails) {
       throw new BadRequestException('Invalid plan');
     }
-
+  
     const priceId = planDetails.stripe?.[billingType];
     if (!priceId) {
       throw new BadRequestException('Stripe price ID not configured for this plan');
     }
-
+  
     const customer = await stripe.customers.create({
       email: user.email,
       metadata: { userId: user.id.toString() },
     });
-
+  
     const subscription = await stripe.subscriptions.create({
       customer: customer.id,
       items: [{ price: priceId }],
       payment_behavior: 'default_incomplete',
       expand: ['latest_invoice.payment_intent'],
     });
-
+  
     const invoice = subscription.latest_invoice as Stripe.Invoice & {
       payment_intent?: Stripe.PaymentIntent;
     };
-
+  
     if (!invoice.payment_intent?.client_secret) {
       throw new InternalServerErrorException('Stripe client_secret not available');
     }
-
+  
     const expiresAt = new Date();
     billingType === 'MONTHLY'
       ? expiresAt.setMonth(expiresAt.getMonth() + 1)
       : expiresAt.setFullYear(expiresAt.getFullYear() + 1);
-
+  
     await this.userModel.updateOne(
       { id: user.id },
       {
@@ -144,12 +156,13 @@ export class SubscriptionController {
         },
       }
     );
-
+  
     return {
       clientSecret: invoice.payment_intent.client_secret,
       subscriptionId: subscription.id,
     };
   }
+  
 
   @Post('lead-purchase')
  async leadPurchase(@Req() req, @Body() body: { amount: number; leadId: string }) {
