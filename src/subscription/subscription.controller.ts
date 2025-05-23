@@ -53,6 +53,8 @@ interface User {
   email: string;
   role: number;
   subscription?: Subscription;
+  modifiedCount: number
+
 }
 
 @UseGuards(RolesGuard)
@@ -346,7 +348,36 @@ export class SubscriptionController {
 
     return { success: true };
   }
-
+  @Put('update-subscription-id')
+  async updateSubscriptionId(
+    @Body() body: { userId: string; subscriptionId: string; customerId?: string }
+  ) {
+    const { userId, subscriptionId, customerId } = body;
+  
+    if (!userId || !subscriptionId) {
+      throw new BadRequestException('userId and subscriptionId are required');
+    }
+  
+    const updateData: any = {
+      'subscription.subscriptionId': subscriptionId,
+    };
+  
+    if (customerId) {
+      updateData['subscription.customerId'] = customerId;
+    }
+  
+    const result = await this.userModel.updateOne(
+      { id: userId },
+      { $set: updateData }
+    );
+  
+    if (result?.modifiedCount === 0) {
+      throw new InternalServerErrorException('Failed to update subscription');
+    }
+  
+    return { success: true, message: 'Subscription updated successfully' };
+  }
+  
   @HttpCode(200)
   @Post('webhook')
   async stripeWebhook(@Body() body: any, @Headers('stripe-signature') sig: string) {
@@ -399,7 +430,24 @@ console.log('hi');
         }
       );
     }
-
+    if (event.type === 'checkout.session.completed') {
+      const session = dataObject;
+      const subscriptionId = session.subscription;
+      const userId = session.metadata?.userId;
+    
+      if (userId && subscriptionId) {
+        await this.userModel.updateOne(
+          { id: userId },
+          {
+            $set: {
+              'subscription.subscriptionId': subscriptionId,
+            },
+          }
+        );
+      }
+    }
+    
+    
     return { received: true };
   }
 }
