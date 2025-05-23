@@ -371,7 +371,8 @@ export class SubscriptionController {
       { $set: updateData }
     );
   
-    if (result?.modifiedCount === 0) {
+    const modifiedCount = (result as any).modifiedCount ?? (result as any).nModified ?? 0;
+    if (modifiedCount === 0) {
       throw new InternalServerErrorException('Failed to update subscription');
     }
   
