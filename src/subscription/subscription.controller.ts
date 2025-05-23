@@ -367,7 +367,7 @@ export class SubscriptionController {
     }
   
     const result = await this.userModel.updateOne(
-      { id: userId },
+      { _id: new mongoose.Types.ObjectId(userId) },
       { $set: updateData }
     );
   
@@ -378,6 +378,7 @@ export class SubscriptionController {
   
     return { success: true, message: 'Subscription updated successfully' };
   }
+  
   
   @HttpCode(200)
   @Post('webhook')
