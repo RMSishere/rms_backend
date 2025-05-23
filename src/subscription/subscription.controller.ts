@@ -24,7 +24,7 @@ import { USER_ROLES } from 'src/config';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import Stripe from 'stripe';
 import { Types } from 'mongoose';
-
+import * as mongoose from 'mongoose';
 const stripe = new Stripe(
   'REMOVED_STRIPE_TEST_KEY',
   { apiVersion: '2025-04-30.basil' }
