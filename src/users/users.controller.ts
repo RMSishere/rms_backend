@@ -191,18 +191,26 @@ export class UserController {
   }
   @Put('update-password')
   async updatePassword(
-    @Req() req,
+    @Body('email') email: string,
     @Body('newPassword') newPassword: string,
   ) {
+    if (!email || typeof email !== 'string') {
+      throw new BadRequestException('Email is required and must be a string');
+    }
+  
     if (!newPassword || typeof newPassword !== 'string') {
       throw new BadRequestException('New password is required and must be a string');
     }
   
-    // Optional: Add any password strength checks here
+    const user = await this.usersSchema.findOne({ email }).exec();
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
   
     const dataToUpdate = { password: newPassword };
-    return this.userFactory.updateUserData(dataToUpdate, req.user);
+    return this.userFactory.updateUserData(dataToUpdate, user);
   }
+  
   
   // @Roles(USER_ROLES.ADMIN)
   @Get('affiliate')
