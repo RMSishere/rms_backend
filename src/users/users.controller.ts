@@ -195,29 +195,24 @@ export class UserController {
     @Body('newPassword') newPassword: string,
   ) {
     try {
-      console.log('[updatePassword] Received request with email:', email);
+      const normalizedEmail = email?.trim().toLowerCase();
+      console.log('[updatePassword] Searching for email:', normalizedEmail);
   
-      if (!email || typeof email !== 'string') {
-        throw new BadRequestException('Email is required and must be a string');
-      }
-  
-      if (!newPassword || typeof newPassword !== 'string') {
-        throw new BadRequestException('New password is required and must be a string');
-      }
-  
-      const emailToSearch = email.toLowerCase(); // 👈 fix here
-      const user = await this.usersSchema.findOne({ email: emailToSearch }).exec();
+      const user = await this.usersSchema.findOne({ email: normalizedEmail }).exec();
   
       if (!user) {
+        console.error('[updatePassword] User not found for:', normalizedEmail);
         throw new BadRequestException('User not found');
       }
   
       const dataToUpdate = { password: newPassword };
       return this.userFactory.updateUserData(dataToUpdate, user);
     } catch (error) {
+      console.error('[updatePassword] Error:', error);
       throw error;
     }
   }
+  
   
   
   
