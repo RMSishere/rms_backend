@@ -27,8 +27,11 @@ import { ZipCodeModule } from './zipCode/zipCode.module';
 import { ZipCodeSearchModule } from './zipCodeSearch/zipCodeSearch.module';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
+import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { SubscriptionController } from './subscription/subscription.controller'; // adjust path as needed
+import * as dotenv from 'dotenv';
+dotenv.config();
 
 const commonExcludeRoutes = [
   { path: `${GLOBAL_PREFIX}`, method: RequestMethod.GET },
@@ -114,6 +117,7 @@ const commonExcludeRoutes = [
     DashboardModule,
     ScheduleJobsModule,
     ZipCodeSearchModule,
+    ConfigModule.forRoot({ isGlobal: true }),
     MongooseModule.forRoot(process.env.DB_URL, {
       useNewUrlParser: true,
       useFindAndModify: false,
