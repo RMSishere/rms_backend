@@ -28,6 +28,7 @@ import { BadRequestException } from '@nestjs/common';
 import { usersSchema } from './users.schema';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import * as mongoose from 'mongoose'; // ✅ Correct for CommonJS style
 
 @UseGuards(RolesGuard)
 @Controller('auth')
@@ -195,6 +196,15 @@ export class UserController {
     @Body('newPassword') newPassword: string,
   ) {
     try {
+      // Log current DB connection details
+      const conn = mongoose.connection;
+      console.log('[updatePassword] Connected to DB:', {
+        name: conn.name,
+        host: conn.host,
+        port: conn.port,
+        readyState: conn.readyState, // 1 = connected
+      });
+  
       // Log all users for debug
       const allUsers = await this.usersSchema.find({}, { email: 1 }).lean();
       console.log('[updatePassword] All users in DB (email only):', allUsers);
