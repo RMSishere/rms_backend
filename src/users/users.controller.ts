@@ -198,35 +198,27 @@ export class UserController {
       console.log('[updatePassword] Received request with email:', email);
   
       if (!email || typeof email !== 'string') {
-        console.error('[updatePassword] Invalid or missing email');
         throw new BadRequestException('Email is required and must be a string');
       }
   
       if (!newPassword || typeof newPassword !== 'string') {
-        console.error('[updatePassword] Invalid or missing newPassword');
         throw new BadRequestException('New password is required and must be a string');
       }
   
-      const emailToSearch = email.toLowerCase();
-      console.log('[updatePassword] Looking for user with:', emailToSearch);
+      const emailToSearch = email.toLowerCase(); // 👈 fix here
       const user = await this.usersSchema.findOne({ email: emailToSearch }).exec();
   
       if (!user) {
-        console.error('[updatePassword] User not found for email:', emailToSearch);
         throw new BadRequestException('User not found');
       }
   
-      console.log('[updatePassword] User found. Proceeding to update password...');
       const dataToUpdate = { password: newPassword };
-      const result = await this.userFactory.updateUserData(dataToUpdate, user);
-  
-      console.log('[updatePassword] Password update result:', result);
-      return result;
+      return this.userFactory.updateUserData(dataToUpdate, user);
     } catch (error) {
-      console.error('[updatePassword] Error occurred:', error);
       throw error;
     }
   }
+  
   
   
   
