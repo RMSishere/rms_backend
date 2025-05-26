@@ -118,7 +118,7 @@ const commonExcludeRoutes = [
     ScheduleJobsModule,
     ZipCodeSearchModule,
     ConfigModule.forRoot({ isGlobal: true }),
-    MongooseModule.forRoot(process.env.DB_URL, {
+    MongooseModule.forRoot("mongodb+srv://root:rootUser@rmsdb.vvere.mongodb.net/?retryWrites=true&w=majority&appName=rmsDB", {
       useNewUrlParser: true,
       useFindAndModify: false,
       autoIndex: false, // disables auto index creation
