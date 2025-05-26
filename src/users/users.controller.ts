@@ -189,7 +189,21 @@ export class UserController {
   async getAllCustomers(@Query() params: any) {
     return this.userFactory.getAllCustomers(params);
   }
-
+  @Put('update-password')
+  async updatePassword(
+    @Req() req,
+    @Body('newPassword') newPassword: string,
+  ) {
+    if (!newPassword || typeof newPassword !== 'string') {
+      throw new BadRequestException('New password is required and must be a string');
+    }
+  
+    // Optional: Add any password strength checks here
+  
+    const dataToUpdate = { password: newPassword };
+    return this.userFactory.updateUserData(dataToUpdate, req.user);
+  }
+  
   // @Roles(USER_ROLES.ADMIN)
   @Get('affiliate')
   async getAllAffiliates(@Query() params: any) {
