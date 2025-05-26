@@ -194,22 +194,42 @@ export class UserController {
     @Body('email') email: string,
     @Body('newPassword') newPassword: string,
   ) {
-    if (!email || typeof email !== 'string') {
-      throw new BadRequestException('Email is required and must be a string');
-    }
+    try {
+      console.log('[updatePassword] Received request with email:', email);
   
-    if (!newPassword || typeof newPassword !== 'string') {
-      throw new BadRequestException('New password is required and must be a string');
-    }
+      if (!email || typeof email !== 'string') {
+        console.error('[updatePassword] Invalid or missing email');
+        throw new BadRequestException('Email is required and must be a string');
+      }
   
-    const user = await this.usersSchema.findOne({ email }).exec();
-    if (!user) {
-      throw new BadRequestException('User not found');
-    }
+      if (!newPassword || typeof newPassword !== 'string') {
+        console.error('[updatePassword] Invalid or missing newPassword');
+        throw new BadRequestException('New password is required and must be a string');
+      }
   
-    const dataToUpdate = { password: newPassword };
-    return this.userFactory.updateUserData(dataToUpdate, user);
+      console.log('[updatePassword] Looking for user in DB...');
+      const user = await this.usersSchema.findOne({ email }).exec();
+  
+      if (!user) {
+        console.error('[updatePassword] User not found for email:', email);
+        throw new BadRequestException('User not found');
+      }
+  
+      console.log('[updatePassword] User found. Proceeding to update password...');
+  
+      const dataToUpdate = { password: newPassword };
+  
+      const result = await this.userFactory.updateUserData(dataToUpdate, user);
+  
+      console.log('[updatePassword] Password update result:', result);
+  
+      return result;
+    } catch (error) {
+      console.error('[updatePassword] Error occurred:', error);
+      throw error;
+    }
   }
+  
   
   
   // @Roles(USER_ROLES.ADMIN)
