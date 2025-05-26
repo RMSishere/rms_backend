@@ -195,6 +195,10 @@ export class UserController {
     @Body('newPassword') newPassword: string,
   ) {
     try {
+      // Log all users for debug
+      const allUsers = await this.usersSchema.find({}, { email: 1 }).lean();
+      console.log('[updatePassword] All users in DB (email only):', allUsers);
+  
       const normalizedEmail = email?.trim().toLowerCase();
       console.log('[updatePassword] Searching for email:', normalizedEmail);
   
@@ -212,6 +216,7 @@ export class UserController {
       throw error;
     }
   }
+  
   
   
   
