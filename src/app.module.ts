@@ -33,7 +33,7 @@ import { SubscriptionController } from './subscription/subscription.controller';
 const commonExcludeRoutes = [
   { path: `${GLOBAL_PREFIX}`, method: RequestMethod.GET },
   { path: `${GLOBAL_PREFIX}/logs(/?.*)`, method: RequestMethod.GET },
-  { path: `${GLOBAL_PREFIX}/auth/update-password`, method: RequestMethod.GET },
+  { path: `${GLOBAL_PREFIX}/auth/update-password`, method: RequestMethod.PUT },
 
   { path: `${GLOBAL_PREFIX}/auth/login`, method: RequestMethod.POST },
   { path: `${GLOBAL_PREFIX}/auth/logout`, method: RequestMethod.POST },
