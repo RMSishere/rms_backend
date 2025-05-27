@@ -829,57 +829,45 @@ export class UserFactory extends BaseFactory {
 
   async sendTextMessage(data: any): Promise<any> {
     try {
-      const userss = await this.usersModel.find();
-      console.log(userss,'usersss');
-      let res = { error: 'No user found' };
       const commonFilter = {
         isActive: true,
-        // TODO: check if this filter is working properly
-        // notificationSubscriptions: {
-        //   $elemMatch: {
-        //     title: data.notificationSubscription, // if user is subscribed to recieve notification for the category
-        //     // notificationChannels: NOTIFICATION_CHANNELS.SMS
-        //   },
-        // },
       };
-
+  
+      let res = { error: 'No user found' };
+      let numbers: string[] = [];
+  
       if (data.isBulk) {
         const filter: any = { ...commonFilter };
         let customers: User[] = [];
         let affiliates: User[] = [];
-
-        if (data.toCustomers) {
-          const customersFilter = { ...filter, role: USER_ROLES.CLIENT };
-          if (data.zipCode) {
-            customersFilter['zipCode'] = data.zipCode;
-          }
-          customers = await this.usersModel.find(customersFilter, {
-            _id: 0,
-            phoneNumber: 1,
-          });
-        }
-
-        if (data.toAffiliates) {
-          const customersFilter = {
+  
+        if (data.phoneNumber) {
+          numbers = [data.phoneNumber];
+        } else {
+          // Default behavior: send to all customers and affiliates if no numbers provided
+          const customerFilter = { ...filter, role: USER_ROLES.CLIENT };
+          const affiliateFilter = {
             ...filter,
             role: USER_ROLES.AFFILIATE,
             'businessProfile.isApproved': true,
           };
+  
           if (data.zipCode) {
-            customersFilter['businessProfile.nearByZipCodes'] = data.zipCode;
+            customerFilter.zipCode = data.zipCode;
+            affiliateFilter['businessProfile.nearByZipCodes'] = data.zipCode;
           }
-          affiliates = await this.usersModel.find(customersFilter, {
-            _id: 0,
-            phoneNumber: 1,
-          });
+  
+          customers = await this.usersModel.find(customerFilter, { _id: 0, phoneNumber: 1 });
+          affiliates = await this.usersModel.find(affiliateFilter, { _id: 0, phoneNumber: 1 });
+  
+          numbers = [...customers, ...affiliates].map(user => user.phoneNumber);
         }
-
-        const numbers = customers.concat(affiliates).map(dt => dt.phoneNumber);
+  
         if (numbers.length) {
+          console.log('Sending message to phone numbers:', numbers);
           res = await sendBulkTextMessage(data.message, numbers);
         }
       } else if (data.phoneNumber) {
-
         const user: User = await this.usersModel.findOne(
           {
             ...commonFilter,
@@ -887,17 +875,20 @@ export class UserFactory extends BaseFactory {
           },
           { _id: 0, phoneNumber: 1 },
         );
-console.log(user,'userrr');
-        if (user.phoneNumber) {
+  
+        if (user && user.phoneNumber) {
+          console.log('Sending message to phone number:', user.phoneNumber);
           res = await sendBulkTextMessage(data.message, [user.phoneNumber]);
         }
       }
-
+  
       return res;
     } catch (err) {
       throw err;
     }
   }
+  
+  
 
   async getApprovedAffiliate(condition: any): Promise<User> {
     try {
