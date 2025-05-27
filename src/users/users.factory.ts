@@ -20,7 +20,7 @@ import {
   parseFacebookSignedRequest,
 } from 'src/util';
 import { getLatLongFromZipcode } from 'src/util/geo';
-import { randomUUID } from 'crypto'; // Built-in Node module
+import { v4 as randomUUID } from 'uuid';
 
 import { Device } from 'src/util/pushNotification';
 import { sendTemplateEmail } from 'src/util/sendMail';
@@ -51,6 +51,25 @@ import { UserDto } from './users.dto';
 import moment = require('moment-timezone');
 import Axios from 'axios';
 import { HttpException, HttpStatus } from '@nestjs/common';
+import axios from 'axios';
+import * as crypto from 'crypto';
+
+const algorithm = 'aes-256-ecb';
+const key = crypto.createHash('sha256').update('your_custom_secret_key').digest();
+const inputEncoding = 'utf8';
+const outputEncoding = 'base64';
+function encrypt(text: string): string {
+  const cipher = crypto.createCipheriv(algorithm, key, null);
+  let encrypted = cipher.update(text, inputEncoding, outputEncoding);
+  encrypted += cipher.final(outputEncoding);
+  return encrypted;
+}
+function decrypt(encryptedText: string): string {
+  const decipher = crypto.createDecipheriv(algorithm, key, null);
+  let decrypted = decipher.update(encryptedText, outputEncoding, inputEncoding);
+  decrypted += decipher.final(inputEncoding);
+  return decrypted;
+}
 
 @Injectable()
 export class UserFactory extends BaseFactory {
@@ -133,7 +152,21 @@ export class UserFactory extends BaseFactory {
   
         console.log('Affiliate user created successfully');
       } catch (externalErr) {
-        console.error('Failed to create user on affiliate system:', externalErr.response?.data || externalErr.message);
+        const extData = externalErr.response?.data;
+        const errorMessage = extData?.message || externalErr.message;
+  
+        console.error('Failed to create user on affiliate system:', extData || externalErr.message);
+  
+        if (
+          extData?.code === 'email_exists' ||
+          errorMessage?.toLowerCase()?.includes('email already exists')
+        ) {
+          return new APIMessage(
+            'User with given email already exists on external system!',
+            APIMessageTypes.ERROR,
+          );
+        }
+  
         return new APIMessage(
           'Failed to create user on external system.',
           APIMessageTypes.ERROR,
@@ -146,6 +179,7 @@ export class UserFactory extends BaseFactory {
   
       data.createdBy = this.getCreatedBy(data);
       data.password = await getEncryptedPassword(plainPassword);
+      data.passwordEncrypted = encrypt(plainPassword);
       data['avatar'] = getDefaulAvatarUrl(data.firstName, data.lastName);
   
       const newadata = await this.notificationSubscriptionFactory.getAllNotificationSubscriptions({}, data);
@@ -191,6 +225,7 @@ export class UserFactory extends BaseFactory {
       throw err;
     }
   }
+  
   
   
   
@@ -610,101 +645,106 @@ export class UserFactory extends BaseFactory {
   ): Promise<User | APIMessage> {
     try {
       delete dataToUpdate['role'];
-      // these sensitive fields will only be updated if the has been verified through by some menas
-      // like sms otp or email otp
-      const sensitiveFields = [
-        'password',
-        'isMobileVerfied',
-        'isEmailVerified',
-      ];
-
-      if (dataToUpdate) {
-        const condition = { id: user.id, isActive: true };
-        // check if dataToUpdate contains any sensitive fields
-        if (
-          getIntersection(Object.keys(dataToUpdate), sensitiveFields).length > 0
-        ) {
-          //  if yes then check if user is verified to update sensitive fields
-          if (user && user.isUserVerified) {
-            // if dataToUpdate contains password then encrypt password
-            if (dataToUpdate['password']) {
-              dataToUpdate['password'] = await getEncryptedPassword(
-                dataToUpdate['password'],
-              );
-            }
-
-            const newValue = { $set: { ...dataToUpdate } };
-            const updatedUser = await this.usersModel.findOneAndUpdate(
-              condition,
-              newValue,
-              { new: true },
-            );
-            const res = new UserDto(updatedUser);
-
-            res['token'] = await generateToken(updatedUser);
-            return res;
-          } else {
-            throw new UnauthorizedException(
-              'Unverified user can not update sensitive data',
-            );
-          }
-        } else {
-          // if no then just update user's data
-
-          // if updating email
-          if (dataToUpdate.email && dataToUpdate.email !== user.email) {
-            const userExist = await this.checkUserExist({
-              email: dataToUpdate.email,
-            });
-            if (userExist) {
-              return new APIMessage(
-                'User with given email already exists!',
-                APIMessageTypes.ERROR,
-              );
-            }
-          }
-
-          // if updating phone number
-          if (
-            dataToUpdate.phoneNumber &&
-            dataToUpdate.phoneNumber !== user.phoneNumber
-          ) {
-            dataToUpdate.isMobileVerfied = false; // mark unverified new number
-            const userExist = await this.checkUserExist({
-              phoneNumber: dataToUpdate.phoneNumber,
-            });
-            if (userExist) {
-              return new APIMessage(
-                'User with given phone number already exists!',
-                APIMessageTypes.ERROR,
-              );
-            }
-          }
-          const newValue = { $set: { ...dataToUpdate } };
-          const updatedUser = await this.usersModel.findOneAndUpdate(
-            condition,
-            newValue,
-            { new: true },
-          );
-
-          const res = new UserDto(updatedUser);
-          if (
-            dataToUpdate['completingSignUp'] &&
-            updatedUser.role === USER_ROLES.CLIENT
-          ) {
-            await this.sendWelcomeText(updatedUser);
-          }
-
-          res['token'] = await generateToken(updatedUser);
-          return res;
+      const sensitiveFields = ['password', 'isMobileVerfied', 'isEmailVerified'];
+  
+      if (!dataToUpdate) throw new BadRequestException('Invalid Data');
+  
+      const condition = { id: user.id, isActive: true };
+  
+      const hasSensitiveFields = getIntersection(Object.keys(dataToUpdate), sensitiveFields).length > 0;
+  
+      if (hasSensitiveFields) {
+        if (!user || !user.isUserVerified) {
+          throw new UnauthorizedException('Unverified user cannot update sensitive data');
         }
+  
+        // Handle password change
+        if (dataToUpdate['password']) {
+          const plainNewPassword = dataToUpdate['password'];
+  
+          // Encrypt and update local password
+          dataToUpdate['password'] = await getEncryptedPassword(plainNewPassword);
+  
+          try {
+            // Fetch user with passwordEncrypted
+            const dbUser = await this.usersModel.findById(user.id).select('email passwordEncrypted');
+            if (!dbUser) throw new Error('User not found in DB for WP password update');
+  
+            const plainOldPassword = decrypt(dbUser.passwordEncrypted);
+  
+            // Login to WordPress with old password
+            const wpLoginResponse = await Axios.post(
+              'https://runmysale.com/wp-json/affiliate-subscription/v1/login',
+              {
+                username: dbUser.email,
+                password: plainOldPassword,
+              }
+            );
+  
+            if (!wpLoginResponse.data || !wpLoginResponse.data.token) {
+              throw new Error('Failed to login to WordPress to update password');
+            }
+  
+            const wpToken = wpLoginResponse.data.token;
+  
+            // Update password on WordPress
+            const wpUpdateResponse = await axios.post(
+              'https://runmysale.com/wp-json/affiliate-subscription/v1/update_profile',
+              {
+                token: wpToken,
+                password: plainNewPassword,
+              }
+            );
+  
+            if (!wpUpdateResponse.data || wpUpdateResponse.data.success === false) {
+              throw new Error('Failed to update password on WordPress');
+            }
+          } catch (wpErr) {
+            throw new Error(`WordPress password update error: ${wpErr.message}`);
+          }
+        }
+  
+        // Update local user
+        const newValue = { $set: { ...dataToUpdate } };
+        const updatedUser = await this.usersModel.findOneAndUpdate(condition, newValue, { new: true });
+  
+        const res = new UserDto(updatedUser);
+        res['token'] = await generateToken(updatedUser);
+        return res;
       } else {
-        throw new BadRequestException('Invalid Data');
+        // Handle general data updates
+        if (dataToUpdate.email && dataToUpdate.email !== user.email) {
+          const userExist = await this.checkUserExist({ email: dataToUpdate.email });
+          if (userExist) {
+            return new APIMessage('User with given email already exists!', APIMessageTypes.ERROR);
+          }
+        }
+  
+        if (dataToUpdate.phoneNumber && dataToUpdate.phoneNumber !== user.phoneNumber) {
+          dataToUpdate.isMobileVerfied = false;
+          const userExist = await this.checkUserExist({ phoneNumber: dataToUpdate.phoneNumber });
+          if (userExist) {
+            return new APIMessage('User with given phone number already exists!', APIMessageTypes.ERROR);
+          }
+        }
+  
+        const newValue = { $set: { ...dataToUpdate } };
+        const updatedUser = await this.usersModel.findOneAndUpdate(condition, newValue, { new: true });
+  
+        const res = new UserDto(updatedUser);
+  
+        if (dataToUpdate['completingSignUp'] && updatedUser.role === USER_ROLES.CLIENT) {
+          await this.sendWelcomeText(updatedUser);
+        }
+  
+        res['token'] = await generateToken(updatedUser);
+        return res;
       }
     } catch (err) {
       throw err;
     }
   }
+  
 
   async updateSocialLoginData(
     dataToUpdate: User | any,
@@ -829,45 +869,57 @@ export class UserFactory extends BaseFactory {
 
   async sendTextMessage(data: any): Promise<any> {
     try {
+      const userss = await this.usersModel.find();
+      console.log(userss,'usersss');
+      let res = { error: 'No user found' };
       const commonFilter = {
         isActive: true,
+        // TODO: check if this filter is working properly
+        // notificationSubscriptions: {
+        //   $elemMatch: {
+        //     title: data.notificationSubscription, // if user is subscribed to recieve notification for the category
+        //     // notificationChannels: NOTIFICATION_CHANNELS.SMS
+        //   },
+        // },
       };
-  
-      let res = { error: 'No user found' };
-      let numbers: string[] = [];
-  
+
       if (data.isBulk) {
         const filter: any = { ...commonFilter };
         let customers: User[] = [];
         let affiliates: User[] = [];
-  
-        if (data.phoneNumber) {
-          numbers = [data.phoneNumber];
-        } else {
-          // Default behavior: send to all customers and affiliates if no numbers provided
-          const customerFilter = { ...filter, role: USER_ROLES.CLIENT };
-          const affiliateFilter = {
+
+        if (data.toCustomers) {
+          const customersFilter = { ...filter, role: USER_ROLES.CLIENT };
+          if (data.zipCode) {
+            customersFilter['zipCode'] = data.zipCode;
+          }
+          customers = await this.usersModel.find(customersFilter, {
+            _id: 0,
+            phoneNumber: 1,
+          });
+        }
+
+        if (data.toAffiliates) {
+          const customersFilter = {
             ...filter,
             role: USER_ROLES.AFFILIATE,
             'businessProfile.isApproved': true,
           };
-  
           if (data.zipCode) {
-            customerFilter.zipCode = data.zipCode;
-            affiliateFilter['businessProfile.nearByZipCodes'] = data.zipCode;
+            customersFilter['businessProfile.nearByZipCodes'] = data.zipCode;
           }
-  
-          customers = await this.usersModel.find(customerFilter, { _id: 0, phoneNumber: 1 });
-          affiliates = await this.usersModel.find(affiliateFilter, { _id: 0, phoneNumber: 1 });
-  
-          numbers = [...customers, ...affiliates].map(user => user.phoneNumber);
+          affiliates = await this.usersModel.find(customersFilter, {
+            _id: 0,
+            phoneNumber: 1,
+          });
         }
-  
+
+        const numbers = customers.concat(affiliates).map(dt => dt.phoneNumber);
         if (numbers.length) {
-          console.log('Sending message to phone numbers:', numbers);
           res = await sendBulkTextMessage(data.message, numbers);
         }
       } else if (data.phoneNumber) {
+
         const user: User = await this.usersModel.findOne(
           {
             ...commonFilter,
@@ -875,20 +927,17 @@ export class UserFactory extends BaseFactory {
           },
           { _id: 0, phoneNumber: 1 },
         );
-  
-        if (user && user.phoneNumber) {
-          console.log('Sending message to phone number:', user.phoneNumber);
+console.log(user,'userrr');
+        if (user.phoneNumber) {
           res = await sendBulkTextMessage(data.message, [user.phoneNumber]);
         }
       }
-  
+
       return res;
     } catch (err) {
       throw err;
     }
   }
-  
-  
 
   async getApprovedAffiliate(condition: any): Promise<User> {
     try {
@@ -1040,26 +1089,66 @@ console.log(user);
       throw err;
     }
   }
-  async approveBusinessProfileByIdOnly(id: string): Promise<User> {
-    try {
-      const filter = { _id: id };
-      const newValue = {
-        'businessProfile.isApproved': true,
-        'businessProfile.approvedDate': new Date(),
-      };
+// adjust import as needed
   
-      const updatedUser = await this.usersModel.findOneAndUpdate(
-        filter,
-        { $set: newValue },
-        { new: true },
-      );
-      const res = new UserDto(updatedUser);
-  
-      return res;
-    } catch (err) {
-      throw err;
+async approveBusinessProfileByIdOnly(id: string): Promise<{ success: boolean; data?: UserDto; error?: string }> {
+  try {
+    // 1. Find the user first to get username & password for wordpress login
+    const user = await this.usersModel.findById(id).select('email passwordEncrypted');
+    if (!user) {
+      return { success: false, error: 'User not found' };
     }
+
+    const plainPassword = decrypt(user.passwordEncrypted);
+
+    // 2. Login to WordPress API
+    const wpLoginResponse = await Axios.post("https://runmysale.com/wp-json/affiliate-subscription/v1/login", {
+      username: user.email,
+      password: plainPassword
+    });
+    console.log("hello",wpLoginResponse);
+// console.log(wpLoginResponse);
+if (!wpLoginResponse.data || !wpLoginResponse.data.token) {
+  return { success: false, error: 'WordPress login failed - token missing' };
+}
+
+    const wpToken = wpLoginResponse.data.token;
+console.log(wpToken,'dsdsas');
+    // 3. Update profile on WordPress
+    const wpUpdateResponse = await axios.post(
+      'https://runmysale.com/wp-json/affiliate-subscription/v1/update_profile',
+      {
+        token: wpToken,
+        role: 'affiliate_member',
+      }
+    );
+
+    if (!wpUpdateResponse.data.success) {
+      return { success: false, error: 'WordPress profile update failed' };
+    }
+
+    // 4. Update user in our database
+    const updatedUser = await this.usersModel.findOneAndUpdate(
+      { _id: id },
+      {
+        $set: {
+          'businessProfile.isApproved': true,
+          'businessProfile.approvedDate': new Date(),
+        }
+      },
+      { new: true }
+    );
+
+    if (!updatedUser) {
+      return { success: false, error: 'Failed to update user in DB' };
+    }
+
+    return { success: true, data: new UserDto(updatedUser) };
+  } catch (err) {
+    return { success: false, error: err.message || 'An unexpected error occurred' };
   }
+}
+
   
   
   async getAreaServiceAndNearByZipCodes(

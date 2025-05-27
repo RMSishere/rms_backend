@@ -4,6 +4,7 @@ import { BusinessProfile } from './BusinessProfile';
 import { NotificationSubscription } from './NotificationSubscription';
 
 export interface User extends Base {
+  passwordEncrypted?: string;
   firstName: string;
   lastName: string;
   businessProfile?: BusinessProfile;

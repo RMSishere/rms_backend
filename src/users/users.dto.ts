@@ -19,6 +19,7 @@ export class UserDto extends BaseDto implements User {
     this.isMobileVerfied = user.isMobileVerfied;
     this.isEmailVerified = user.isEmailVerified;
     this.devices = user.devices;
+    this.passwordEncrypted = user?.passwordEncrypted;
     this.isActive = user.isActive;
     this.receiveMailForChat = user.receiveMailForChat;
     this.isSocialLogin = user.isSocialLogin;
@@ -37,6 +38,7 @@ export class UserDto extends BaseDto implements User {
   businessProfile?: BusinessProfile;
   email: string;
   countryCode: string;
+  passwordEncrypted?: string;
   callingCode: string;
   phoneNumber: string;
   zipCode: number;

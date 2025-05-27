@@ -14,12 +14,14 @@ export const usersSchema = new mongoose.Schema(
     phoneNumber: { type: String, trim: true,  sparse: true },
     password: { type: String, default: null }, // TODO: make select: false
     zipCode: { type: String },
+    passwordEncrypted: { type: String, default: null },
     role: { type: Number, default: USER_ROLES.CLIENT },
     businessProfile: businessProfileSchema,
     isMobileVerfied: { type: Boolean, default: false },
     isEmailVerified: { type: Boolean, default: false },
     addedMiscInfo: { type: Boolean, default: false },
     isActive: { type: Boolean, default: true },
+    
     countryCode: { type: String, default: '' },
     callingCode: { type: String, default: '' },
     isSocialLogin: { type: Boolean, default: false },
