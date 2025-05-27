@@ -1295,7 +1295,7 @@ console.log(user);
         },
         { new: true },
       );
-      
+
       const user = new UserDto(updatedUser);
       return {
         url: `${process.env.SERVER_HOST}/${GLOBAL_PREFIX}/auth/facebook/deletion?userId=${user.id}`,

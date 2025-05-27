@@ -29,11 +29,14 @@ import { usersSchema } from './users.schema';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import * as mongoose from 'mongoose'; // ✅ Correct for CommonJS style
+import { InjectConnection } from '@nestjs/mongoose';
+import { Connection } from 'mongoose';
 
 @UseGuards(RolesGuard)
 @Controller('auth')
 export class UserController {
-  constructor(public readonly userFactory: UserFactory,@InjectModel('users') private readonly usersSchema: Model<User>) {
+  constructor(public readonly userFactory: UserFactory,@InjectModel('users') private readonly usersSchema: Model<User> ,    @InjectConnection() private readonly dbConnection: Connection // ✅ Add this
+) {
     
   }
 
@@ -197,16 +200,10 @@ export class UserController {
   ) {
     try {
       // Log current DB connection details
-      const conn = mongoose.connection;
-      console.log('[updatePassword] Connected to DB:', {
-        name: conn.name,
-        host: conn.host,
-        port: conn.port,
-        readyState: conn.readyState, // 1 = connected
-      });
+      // xs
   
       // Log all users for debug
-      const allUsers = await this.usersSchema.find({}, { email: 1 }).lean();
+      const allUsers = await this.usersSchema.find();
       console.log('[updatePassword] All users in DB (email only):', allUsers);
   
       const normalizedEmail = email?.trim().toLowerCase();
