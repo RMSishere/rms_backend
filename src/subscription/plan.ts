@@ -4,8 +4,8 @@ export const CUSTOMER_PLANS = {
         priceMonthly: 14,
         priceYearly: 119,
         stripe: {
-          MONTHLY: 'price_id_for_standard_monthly',
-          YEARLY: 'price_id_for_standard_yearly',
+          MONTHLY: 'price_1RNhiBRdnZqQYz46zJVFRE2W',
+          YEARLY: 'price_1RNhzNRdnZqQYz46a1evyg0K',
         },
         features: {
           maxJobsPerMonth: 1,
@@ -20,8 +20,8 @@ export const CUSTOMER_PLANS = {
         priceMonthly: 22,
         priceYearly: 211,
         stripe: {
-          MONTHLY: 'price_id_for_standard_monthly',
-          YEARLY: 'price_id_for_standard_yearly',
+          MONTHLY: 'price_1RNi0hRdnZqQYz46fb8YIl8D',
+          YEARLY: 'price_1RNi0hRdnZqQYz46Q1JqOOT7',
         },
         features: {
           maxJobsPerMonth: Infinity,
@@ -36,8 +36,8 @@ export const CUSTOMER_PLANS = {
         priceMonthly: 44,
         priceYearly: 370,
         stripe: {
-          MONTHLY: 'price_id_for_standard_monthly',
-          YEARLY: 'price_id_for_standard_yearly',
+          MONTHLY: 'price_1RNi1ORdnZqQYz46I6Mo9H3X',
+          YEARLY: 'price_1RNi1ORdnZqQYz46ujlVv5ZD',
         },
         features: {
           maxJobsPerMonth: Infinity,
@@ -60,8 +60,8 @@ export const CUSTOMER_PLANS = {
         priceMonthly: 29,
         priceYearly: 247,
         stripe: {
-          MONTHLY: 'price_id_for_standard_monthly',
-          YEARLY: 'price_id_for_standard_yearly',
+          MONTHLY: 'price_1RNi2ERdnZqQYz46Ar0r6NWZ',
+          YEARLY: 'price_1RNi2ERdnZqQYz46HrFNFote',
         },
         features: {
           pricingHelp: 10,
@@ -74,8 +74,8 @@ export const CUSTOMER_PLANS = {
         priceMonthly: 49,
         priceYearly: 392,
         stripe: {
-          MONTHLY: 'price_id_for_standard_monthly',
-          YEARLY: 'price_id_for_standard_yearly',
+          MONTHLY: 'price_1RNi2hRdnZqQYz46r5Ho1oNM',
+          YEARLY: 'price_1RNi39RdnZqQYz46RmJYd4Ml',
         },
         features: {
           pricingHelp: 20,
@@ -90,8 +90,8 @@ export const CUSTOMER_PLANS = {
         priceMonthly: 99,
         priceYearly: 693,
         stripe: {
-          MONTHLY: 'price_id_for_standard_monthly',
-          YEARLY: 'price_id_for_standard_yearly',
+          MONTHLY: 'price_1RNi41RdnZqQYz46olOeXXpo',
+          YEARLY: 'price_1RNi41RdnZqQYz46dSIiA7vn',
         },
         features: {
           pricingHelp: 20,
