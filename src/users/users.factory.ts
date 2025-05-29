@@ -53,6 +53,7 @@ import moment = require('moment-timezone');
 import Axios from 'axios';
 import { HttpException, HttpStatus } from '@nestjs/common';
 import axios from 'axios';
+
 import * as crypto from 'crypto';
 sgMail.setApiKey(process.env.SEND_GRID_API_KEY);
 const algorithm = 'aes-256-ecb';
@@ -866,31 +867,67 @@ export class UserFactory extends BaseFactory {
     }
   }
 
+
   async addHelpMessage(data: HelpMessage, user: User): Promise<HelpMessage> {
     try {
-      data['id'] = await this.generateSequentialId('HelpMessage');
+      console.log('--- addHelpMessage called ---');
+      console.log('Incoming user:', user);
+      console.log('Incoming data:', data);
+  
+      if (!user || !user.email) {
+        console.error('Invalid or missing user');
+        throw new HttpException('Invalid or missing user in request', HttpStatus.BAD_REQUEST);
+      }
+  
+      // Generate a unique sequential ID for the HelpMessage
+      const newId = await this.generateSequentialId('HelpMessage');
+      console.log('Generated HelpMessage ID:', newId);
+      data['id'] = newId;
+  
+      // Attach user and creator info
       data['user'] = user;
       data.createdBy = this.getCreatedBy(user);
-
+      console.log('Final help message data before save:', data);
+  
+      // Save help message to DB
       const newHelpMessage = new this.helpMessageModel(data);
       let res = await newHelpMessage.save();
+      console.log('Help message saved:', res);
+  
+      // Populate user info
       res = await res.populate('user').execPopulate();
+      console.log('Populated help message:', res);
+  
+      // Transform to DTO
       const helpMessage = new HelpMessageDto(res);
-
+      console.log('HelpMessage DTO:', helpMessage);
+  
+      // Fetch admin and send email
       const admin = await this.getAdmin();
-
+      console.log('Admin user:', admin);
+  
       if (admin && admin.email) {
+        console.log('Sending help message email to admin...');
         sendTemplateEmail(admin.email, MAIL_TEMPLATES.HELP_MESSAGE, {
           message: helpMessage.message,
           user: helpMessage.user,
         });
+      } else {
+        console.warn('Admin not found or missing email, no email sent.');
       }
-
+  
+      console.log('--- addHelpMessage completed successfully ---');
       return helpMessage;
+  
     } catch (err) {
-      throw err;
+      console.error('Error in addHelpMessage:', err);
+      throw new HttpException(
+        `Failed to add help message: ${err.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
+  
   async deleteAffiliateProfileById(id: string): Promise<{ success: boolean; message: string }> {
     try {
       const result = await this.usersModel.deleteOne({ _id: id });
