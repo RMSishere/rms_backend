@@ -213,8 +213,8 @@ export class SubscriptionController {
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       mode: 'payment',
-      success_url: `${body.success_url}?leadId=${body.leadId}`,
-      cancel_url: `${body.cancel_url}?leadId=${body.leadId}`,
+      success_url: `${body.success_url}`,
+      cancel_url: `${body.cancel_url}`,
       metadata: {
         userId: user.id.toString(),
         leadId: body.leadId,
