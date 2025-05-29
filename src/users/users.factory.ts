@@ -59,6 +59,7 @@ sgMail.setApiKey(process.env.SEND_GRID_API_KEY);
 const algorithm = 'aes-256-ecb';
 const key = crypto.createHash('sha256').update('your_custom_secret_key').digest();
 const inputEncoding = 'utf8';
+const emailOtpStore: Map<string, { otp: string; expiresAt: number }> = new Map();
 const outputEncoding = 'base64';
 function encrypt(text: string): string {
   const cipher = crypto.createCipheriv(algorithm, key, null);
@@ -565,6 +566,7 @@ export class UserFactory extends BaseFactory {
       throw err;
     }
   }
+  
   async requestVerificationCode(to: string, channel: string): Promise<any> {
     try {
       if (!to || !channel) {
@@ -574,13 +576,14 @@ export class UserFactory extends BaseFactory {
       if (channel === 'email') {
         // Generate a random 6-digit OTP
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes expiry
   
         // Set SendGrid API Key
         sgMail.setApiKey(process.env.SEND_GRID_API_KEY);
   
         const msg = {
           to,
-          from: 'info@thebrandshub.ae', // Replace with your verified sender
+          from: 'info@thebrandshub.ae', // Replace with verified sender
           subject: 'Your Verification Code',
           text: `Your verification code is ${otp}`,
           html: `<strong>Your verification code is ${otp}</strong>`,
@@ -588,12 +591,12 @@ export class UserFactory extends BaseFactory {
   
         await sgMail.send(msg);
   
-        console.log(`OTP sent to ${to} via email: ${otp}`);
+        // Store OTP temporarily in memory
+        emailOtpStore.set(to, { otp, expiresAt });
   
-        // Return OTP if you need to store it in DB or for testing
-        return { otp, channel: 'email', to };
+        console.log(`OTP sent to ${to} via email: ${otp}`);
+        return { channel: 'email', to };
       } else {
-        // Default Twilio channel
         const res = await twilioVerifyService.verifications.create({
           to,
           channel,
@@ -608,62 +611,70 @@ export class UserFactory extends BaseFactory {
     }
   }
   
+  
 
-  async verifyVerificationCode(to: string, code: string , role: string): Promise<any> {
-    console.log('verifyVerificationCode input ==>', to, code , role)
+  async verifyVerificationCode(to: string, code: string, role: string): Promise<any> {
+    console.log('verifyVerificationCode input ==>', to, code, role);
     try {
-      if (to && code) {
-        const res = await twilioVerifyService.verificationChecks.create({
-          to,
-          code,
-        });
-
-        if (!res || !Object.values(TWILIO_CHANNEL).includes(res.channel)) {
-          throw new InternalServerErrorException(API_MESSAGES.SERVER_ERROR);
-        }
-
-        if (res.status === 'approved') {
-          if (
-            res.channel === TWILIO_CHANNEL.SMS ||
-            res.channel === TWILIO_CHANNEL.CALL
-          ) {
-            const query: any = {
-              phoneNumber: to 
-            };
-            
-            if (role) {
-              query.role = role;
-              // Optionally, you can add the condition isSocialLogin: false here
-            }
-            const user = await this.usersModel
-              .findOne(query)
-              .exec();
-            console.log('verifyVerificationCode user ==>', user)  
-            if (user) {
-              const token = await generateUserVerificationToken(user);
-              return { token };
-            } else {
-              throw new UnauthorizedException();
-            }
-          } else if (res.channel === TWILIO_CHANNEL.EMAIL) {
-            const user = await this.usersModel.findOne({ email: to }).exec();
-            if (user) {
-              const token = await generateUserVerificationToken(user);
-              return { token };
-            } else {
-              throw new UnauthorizedException();
-            }
-          }
-        } else {
-          return res;
-        }
-      } else {
+      if (!to || !code) {
         throw new BadRequestException('Invalid Data');
       }
+  
+      // Handle email OTP verification
+      if (!to.startsWith('+')) {
+        const record = emailOtpStore.get(to);
+        if (!record) {
+          return new APIMessage('No verification request found', APIMessageTypes.ERROR);
+        }
+  
+        if (Date.now() > record.expiresAt) {
+          emailOtpStore.delete(to);
+          return new APIMessage('Verification code expired', APIMessageTypes.ERROR);
+        }
+  
+        if (record.otp !== code) {
+          return new APIMessage('Invalid verification code', APIMessageTypes.ERROR);
+        }
+  
+        emailOtpStore.delete(to); // OTP used, remove it
+  
+        const user = await this.usersModel.findOne({ email: to }).exec();
+        if (user) {
+          const token = await generateUserVerificationToken(user);
+          return { token };
+        } else {
+          throw new UnauthorizedException();
+        }
+      }
+  
+      // Handle phone verification via Twilio
+      const res = await twilioVerifyService.verificationChecks.create({ to, code });
+  
+      if (!res || !Object.values(TWILIO_CHANNEL).includes(res.channel)) {
+        throw new InternalServerErrorException(API_MESSAGES.SERVER_ERROR);
+      }
+  
+      if (res.status === 'approved') {
+        const query: any = { phoneNumber: to };
+        if (role) {
+          query.role = role;
+        }
+  
+        const user = await this.usersModel.findOne(query).exec();
+        if (user) {
+          const token = await generateUserVerificationToken(user);
+          return { token };
+        } else {
+          throw new UnauthorizedException();
+        }
+      }
+  
+      return new APIMessage('Verification failed', APIMessageTypes.ERROR);
     } catch (err) {
       throw err;
     }
   }
+  
 
   async updateUserData(
     dataToUpdate: User | any,
