@@ -203,40 +203,41 @@ export class SubscriptionController {
   
 
   @Post('lead-purchase')
- async leadPurchase(@Req() req, @Body() body: { amount: number; leadId: string }) {
-  const user = req.user;
+  async leadPurchase(@Req() req, @Body() body: { amount: number; leadId: string; success_url: string; cancel_url: string }) {
+    const user = req.user;
   
-  if (!body.amount || !body.leadId) {
-    throw new BadRequestException('Missing amount or lead ID');
-  }
-
-  const session = await stripe.checkout.sessions.create({
-    payment_method_types: ['card'],
-    mode: 'payment',
-    success_url: `https://yourapp.com/payment-success?leadId=${body.leadId}`,
-    cancel_url: `https://yourapp.com/payment-cancelled?leadId=${body.leadId}`,
-    metadata: {
-      userId: user.id.toString(),
-      leadId: body.leadId,
-      type: 'LEAD_PURCHASE',
-    },
-    line_items: [{
-      price_data: {
-        currency: 'usd',
-        product_data: {
-          name: 'Lead Purchase',
-        },
-        unit_amount: Math.round(body.amount * 100),
+    if (!body.amount || !body.leadId || !body.success_url || !body.cancel_url) {
+      throw new BadRequestException('Missing required fields');
+    }
+  
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      mode: 'payment',
+      success_url: `${body.success_url}?leadId=${body.leadId}`,
+      cancel_url: `${body.cancel_url}?leadId=${body.leadId}`,
+      metadata: {
+        userId: user.id.toString(),
+        leadId: body.leadId,
+        type: 'LEAD_PURCHASE',
       },
-      quantity: 1,
-    }],
-  });
-
-  return {
-    checkoutUrl: session.url,
-    leadId: body.leadId,
-  };
-}
+      line_items: [{
+        price_data: {
+          currency: 'usd',
+          product_data: {
+            name: 'Lead Purchase',
+          },
+          unit_amount: Math.round(body.amount * 100),
+        },
+        quantity: 1,
+      }],
+    });
+  
+    return {
+      checkoutUrl: session.url,
+      leadId: body.leadId,
+    };
+  }
+  
 
 
   @Put('change-plan')
