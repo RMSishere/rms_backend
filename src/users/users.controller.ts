@@ -178,6 +178,7 @@ export class UserController {
 
   @Post('helpMessage')
   async addHelpMessage(@Req() req, @Body() data: HelpMessage) {
+    console.log("reqqqqq",req.user);
     return this.userFactory.addHelpMessage(data, req.user);
   }
 
