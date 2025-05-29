@@ -578,7 +578,7 @@ export class UserFactory extends BaseFactory {
   
         const msg = {
           to,
-          from: 'no-reply@yourdomain.com', // Replace with your verified sender
+          from: 'info@thebrandshub.ae', // Replace with your verified sender
           subject: 'Your Verification Code',
           text: `Your verification code is ${otp}`,
           html: `<strong>Your verification code is ${otp}</strong>`,
