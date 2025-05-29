@@ -9,8 +9,11 @@ import {
   HttpCode,
   Headers,
   BadRequestException,
+  Res,       // ✅ ADD THIS
+  Query,
   InternalServerErrorException,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import {
@@ -213,9 +216,9 @@ export class SubscriptionController {
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       mode: 'payment',
-      success_url: 'https://runmysale.com',
-      cancel_url: 'https://runmysale.com',
-      metadata: {
+      success_url: 'https://runmysale.com/api/v1/subscription/payment-redirect?status=success',
+    cancel_url: 'https://runmysale.com/api/v1/subscription/payment-redirect?status=cancel',
+    metadata: {
         userId: user.id.toString(),
         leadId: body.leadId,
         type: 'LEAD_PURCHASE',
@@ -237,7 +240,28 @@ export class SubscriptionController {
       leadId: body.leadId,
     };
   }
-  
+  @Get('payment-redirect')
+async redirectToApp(@Res() res: Response, @Query('status') status: string) {
+  const deepLink = `runmysaleapp://payment?status=${status || 'unknown'}`;
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>Redirecting...</title>
+        <script>
+          window.location.href = '${deepLink}';
+        </script>
+      </head>
+      <body>
+        <p>Redirecting to app...</p>
+      </body>
+    </html>
+  `;
+  res.setHeader('Content-Type', 'text/html');
+  res.send(html);
+}
+
 
 
   @Put('change-plan')
