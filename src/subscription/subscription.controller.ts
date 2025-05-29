@@ -217,8 +217,8 @@ export class SubscriptionController {
       payment_method_types: ['card'],
       mode: 'payment',
       success_url: 'https://runmysale.com/api/v1/subscription/payment-redirect?status=success',
-    cancel_url: 'https://runmysale.com/api/v1/subscription/payment-redirect?status=cancel',
-    metadata: {
+      cancel_url: 'https://runmysale.com/api/v1/subscription/payment-redirect?status=cancel',
+      metadata: {
         userId: user.id.toString(),
         leadId: body.leadId,
         type: 'LEAD_PURCHASE',
@@ -236,6 +236,7 @@ export class SubscriptionController {
     });
   
     return {
+      session:session.id,
       checkoutUrl: session.url,
       leadId: body.leadId,
     };
@@ -260,6 +261,33 @@ async redirectToApp(@Res() res: Response, @Query('status') status: string) {
   `;
   res.setHeader('Content-Type', 'text/html');
   res.send(html);
+}
+@Get('lead-payment-status')
+async getLeadPaymentStatus(@Query('session_id') sessionId: string) {
+  if (!sessionId) {
+    throw new BadRequestException('Missing session_id query parameter');
+  }
+
+  try {
+    const session = await stripe.checkout.sessions.retrieve(sessionId, {
+      expand: ['payment_intent'],
+    });
+
+    const paymentIntent = session.payment_intent as Stripe.PaymentIntent;
+    const paymentStatus = paymentIntent?.status || 'unknown';
+
+    return {
+      sessionId,
+      leadId: session.metadata?.leadId || null,
+      userId: session.metadata?.userId || null,
+      paymentStatus,
+      amountTotal: session.amount_total / 100,
+      currency: session.currency,
+    };
+  } catch (error) {
+    console.error('Stripe session fetch error:', error.message);
+    throw new InternalServerErrorException('Failed to fetch payment status');
+  }
 }
 
 
