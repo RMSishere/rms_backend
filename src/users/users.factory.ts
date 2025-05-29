@@ -6,7 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import mongoose, { Model } from 'mongoose';
 import { APIMessage, APIMessageTypes } from 'src/common/dto';
 import { PaginatedData } from 'src/common/interfaces';
 import { HelpMessageDto } from 'src/helpMessage/helpMessage.dto';
@@ -890,7 +890,31 @@ export class UserFactory extends BaseFactory {
       throw err;
     }
   }
-
+  async deleteAffiliateProfileById(id: string): Promise<{ success: boolean; message: string }> {
+    try {
+      // Validate ObjectId
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        throw new BadRequestException('Invalid affiliate ID');
+      }
+  
+      // Try deleting the affiliate by _id
+      const result = await this.usersModel.deleteOne({ _id: new mongoose.Types.ObjectId(id) });
+  
+      if (result.deletedCount === 0) {
+        throw new BadRequestException('Affiliate not found or already deleted');
+      }
+  
+      return {
+        success: true,
+        message: 'Affiliate profile deleted successfully',
+      };
+    } catch (err) {
+      console.error('[deleteAffiliateProfileById] Error:', err);
+      throw err;
+    }
+  }
+  
+  
   async sendTextMessage(data: any): Promise<any> {
     try {
       const userss = await this.usersModel.find();

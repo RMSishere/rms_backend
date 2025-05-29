@@ -180,7 +180,13 @@ export class UserController {
   async addHelpMessage(@Req() req, @Body() data: HelpMessage) {
     return this.userFactory.addHelpMessage(data, req.user);
   }
-
+  
+  @Roles(USER_ROLES.ADMIN)
+  @Post('affiliate/:id/deleteProfile')
+  async deleteAffiliateProfile(@Param('id') id: string) {
+    return this.userFactory.deleteAffiliateProfileById(id);
+  }
+  
   // @Roles(USER_ROLES.ADMIN)
   @Post('sendText')
   async sendTextMessage(@Req() req, @Body() data: any) {
