@@ -21,7 +21,7 @@ import {
 } from 'src/util';
 import { getLatLongFromZipcode } from 'src/util/geo';
 import { v4 as randomUUID } from 'uuid';
-
+import * as sgMail from '@sendgrid/mail';
 import { Device } from 'src/util/pushNotification';
 import { sendTemplateEmail } from 'src/util/sendMail';
 import { sendBulkTextMessage, twilioVerifyService } from 'src/util/twilio';
@@ -53,7 +53,7 @@ import Axios from 'axios';
 import { HttpException, HttpStatus } from '@nestjs/common';
 import axios from 'axios';
 import * as crypto from 'crypto';
-
+sgMail.setApiKey(process.env.SEND_GRID_API_KEY);
 const algorithm = 'aes-256-ecb';
 const key = crypto.createHash('sha256').update('your_custom_secret_key').digest();
 const inputEncoding = 'utf8';
@@ -565,20 +565,44 @@ export class UserFactory extends BaseFactory {
   }
   async requestVerificationCode(to: string, channel: string): Promise<any> {
     try {
-      if (to && channel) {
+      if (!to || !channel) {
+        throw new BadRequestException('Invalid Data');
+      }
+  
+      if (channel === 'email') {
+        // Generate a random 6-digit OTP
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  
+        // Set SendGrid API Key
+        sgMail.setApiKey(process.env.SEND_GRID_API_KEY);
+  
+        const msg = {
+          to,
+          from: 'no-reply@yourdomain.com', // Replace with your verified sender
+          subject: 'Your Verification Code',
+          text: `Your verification code is ${otp}`,
+          html: `<strong>Your verification code is ${otp}</strong>`,
+        };
+  
+        await sgMail.send(msg);
+  
+        console.log(`OTP sent to ${to} via email: ${otp}`);
+  
+        // Return OTP if you need to store it in DB or for testing
+        return { otp, channel: 'email', to };
+      } else {
+        // Default Twilio channel
         const res = await twilioVerifyService.verifications.create({
           to,
           channel,
         });
   
-        // Log the OTP to the console (for debugging)
-        console.log(`OTP sent to ${to} via ${channel}: ${res.sid}`);  // You can replace `res.sid` with `res.code` to print the OTP
+        console.log(`OTP sent to ${to} via ${channel}: ${res.sid}`);
         return res;
-      } else {
-        throw new BadRequestException('Invalid Data');
       }
     } catch (err) {
-      throw err;
+      console.error(err);
+      throw new InternalServerErrorException('Failed to send verification code');
     }
   }
   
