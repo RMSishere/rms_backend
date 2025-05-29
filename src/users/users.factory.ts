@@ -606,7 +606,7 @@ export class UserFactory extends BaseFactory {
         return res;
       }
     } catch (err) {
-      console.error(err);
+      console.error('SendGrid Error:', err?.response?.body || err.message || err);
       throw new InternalServerErrorException('Failed to send verification code');
     }
   }
