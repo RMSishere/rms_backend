@@ -9,6 +9,8 @@ import {
   Req,
   UseGuards,
   Render,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import {
   User,
@@ -31,7 +33,7 @@ import { Model } from 'mongoose';
 import * as mongoose from 'mongoose'; // ✅ Correct for CommonJS style
 import { InjectConnection } from '@nestjs/mongoose';
 import { Connection } from 'mongoose';
-
+import * as jwt from 'jsonwebtoken';
 @UseGuards(RolesGuard)
 @Controller('auth')
 export class UserController {
@@ -177,9 +179,26 @@ export class UserController {
   }
 
   @Post('helpMessage')
-  async addHelpMessage(@Req() req, @Body() data: HelpMessage) {
-    console.log("reqqqqq",req.user);
-    return this.userFactory.addHelpMessage(data, req.user);
+  async addHelpMessage(@Req() req: Request, @Body() body: any) {
+    // Extract token from body or headers
+    const token = body.token || req.headers['token'];
+  
+    if (!token) {
+      throw new HttpException('Missing token in request', HttpStatus.BAD_REQUEST);
+    }
+  
+    let decodedUser;
+    try {
+      decodedUser = jwt.verify(token, process.env.JWT_SECRET_KEY); // Use your actual JWT secret
+    } catch (err) {
+      throw new HttpException('Invalid token', HttpStatus.UNAUTHORIZED);
+    }
+  
+    // Get the actual help message data
+    const data = { ...body };
+    delete data.token;
+  
+    return this.userFactory.addHelpMessage(data, decodedUser);
   }
 
   // @Roles(USER_ROLES.ADMIN)
