@@ -893,13 +893,7 @@ export class UserFactory extends BaseFactory {
   }
   async deleteAffiliateProfileById(id: string): Promise<{ success: boolean; message: string }> {
     try {
-      // Validate ObjectId
-      if (!mongoose.Types.ObjectId.isValid(id)) {
-        throw new BadRequestException('Invalid affiliate ID');
-      }
-  
-      // Try deleting the affiliate by _id
-      const result = await this.usersModel.deleteOne({ _id: new mongoose.Types.ObjectId(id) });
+      const result = await this.usersModel.deleteOne({ _id: id });
   
       if (result.deletedCount === 0) {
         throw new BadRequestException('Affiliate not found or already deleted');
@@ -914,6 +908,7 @@ export class UserFactory extends BaseFactory {
       throw err;
     }
   }
+  
   
   
   async sendTextMessage(data: any): Promise<any> {
