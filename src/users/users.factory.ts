@@ -6,7 +6,8 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import mongoose, { Model } from 'mongoose';
+import * as mongoose from 'mongoose';
+import { Model } from 'mongoose';
 import { APIMessage, APIMessageTypes } from 'src/common/dto';
 import { PaginatedData } from 'src/common/interfaces';
 import { HelpMessageDto } from 'src/helpMessage/helpMessage.dto';
