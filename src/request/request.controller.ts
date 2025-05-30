@@ -57,7 +57,7 @@ export class RequestController {
   @Render('requestReport')
   async getRequestReport(@Param('id') id: string) {
     const request: Request = await this.requestFactory.getRequestById(id);
-
+ console.log(request,SERVICES[request.requestType],capitalize,formatMoney,getClientCutForItem,getAffilaiteChargeForItem,moment,'//////');
     return {
       request,
       service: SERVICES[request.requestType],

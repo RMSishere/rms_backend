@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { User } from 'aws-sdk/clients/appstream';
 import { Model } from 'mongoose';
 import { PaginatedData } from 'src/common/interfaces';
 import { UserMiscInfoDto } from 'src/userMiscInfo/userMiscInfo.dto';
@@ -9,7 +8,7 @@ import { weekOfMonth } from 'src/util';
 import { paginationLimit, REQUEST_STATUS, USER_ROLES } from '../config';
 import { PAYMENT_STATUS } from '../config/index';
 import { BaseFactory } from '../lib/base.factory';
-import { Counter,Request, Payment, UserMiscInfo } from '../lib/index';
+import { Counter,Request, Payment, UserMiscInfo, User } from '../lib/index';
 import { UserFactory } from '../users/users.factory';
 import moment = require('moment');
 
