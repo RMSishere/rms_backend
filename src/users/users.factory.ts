@@ -55,6 +55,7 @@ import { HttpException, HttpStatus } from '@nestjs/common';
 import axios from 'axios';
 
 import * as crypto from 'crypto';
+import { error } from 'console';
 sgMail.setApiKey(process.env.SEND_GRID_API_KEY);
 const algorithm = 'aes-256-ecb';
 const key = crypto.createHash('sha256').update('your_custom_secret_key').digest();
@@ -606,9 +607,20 @@ export class UserFactory extends BaseFactory {
         return res;
       }
     } catch (err) {
+       if(channel==='sms' && err.message.includes("Invalid parameter")){
+        // console.log("hiiii",err.message,'./././././');
+        return {
+          statusCode:"400",
+          message:err.message,
+          error:"Invalid Phone Number"
+        }
+      throw new InternalServerErrorException('Failed to send verification code');
+    }else{
       console.error('SendGrid Error:', err?.response?.body || err.message || err);
       throw new InternalServerErrorException('Failed to send verification code');
+     
     }
+  }
   }
   
   
