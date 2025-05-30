@@ -352,13 +352,46 @@ async getLeadPaymentStatus(@Query('session_id') sessionId: string) {
 
   @Get('status')
   async getStatus(@Req() req) {
-    console.log(req.user,'testtt');
     const user = await this.userModel
       .findOne({ id: req.user.id })
       .select('subscription')
       .lean();
-    return user?.subscription || {};
+  
+    if (!user?.subscription) {
+      return {};
+    }
+  
+    const subscription = user.subscription;
+    let planName = null;
+  
+    // If there's a valid Stripe subscriptionId, fetch its details
+    if (subscription.subscriptionId) {
+      try {
+        const stripeSub = await stripe.subscriptions.retrieve(subscription.subscriptionId, {
+          expand: ['items.data.price.product'],
+        });
+  
+        planName = (stripeSub.items.data[0]?.price?.product as Stripe.Product)?.name || null;
+      } catch (err) {
+        console.error('Failed to fetch subscription from Stripe:', err.message);
+      }
+    }
+  
+    return {
+      type: subscription.type,
+      billingType: subscription.billingType,
+      status: subscription.status,
+      startedAt: subscription.startedAt,
+      expiresAt: subscription.expiresAt,
+      jobRequestCountThisMonth: subscription.jobRequestCountThisMonth,
+      pricingRequestsUsed: subscription.pricingRequestsUsed,
+      customVideosUsed: subscription.customVideosUsed,
+      pitchReviewsUsed: subscription.pitchReviewsUsed,
+      subscriptionId: subscription.subscriptionId,
+      planName,
+    };
   }
+  
 
   @Put('use-job-credit')
   async useCredit(@Req() req) {
