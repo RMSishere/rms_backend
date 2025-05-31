@@ -230,6 +230,104 @@ export class UserFactory extends BaseFactory {
     }
   }
   
+  async addUser2(data: User): Promise<User | APIMessage> {
+    try {
+      console.log('Raw input data:', data);
+      data.email = data.email.toLowerCase();
+  
+      if (data.role === USER_ROLES.ADMIN) {
+        console.log('Admin role detected – throwing error');
+        throw new InternalServerErrorException();
+      }
+  
+      if (!data.termsAccepted) {
+        console.log('Terms not accepted');
+        return new APIMessage(
+          'Please accept terms and conditions!',
+          APIMessageTypes.ERROR,
+        );
+      }
+  
+      if (data.email) {
+        const userExist = await this.checkUserExist({ email: data.email, role: data.role });
+        console.log('Email check result:', userExist);
+        if (userExist) {
+          return new APIMessage(
+            'User with given email & role already exists!',
+            APIMessageTypes.ERROR,
+          );
+        }
+      }
+  
+      if (data.phoneNumber) {
+        const userExist = await this.checkUserExist({
+          phoneNumber: data.phoneNumber,
+          role: data.role,
+        });
+        console.log('Phone check result:', userExist);
+        if (userExist) {
+          return new APIMessage(
+            'User with given phone number & role already exists!',
+            APIMessageTypes.ERROR,
+          );
+        }
+      }
+  
+      const plainPassword = data.password;
+  
+      // Skip external WordPress API call
+  
+      data['id'] = await this.generateSequentialId('users');
+      console.log('Generated user id:', data['id']);
+  
+      data.createdBy = this.getCreatedBy(data);
+      data.password = await getEncryptedPassword(plainPassword);
+      data.passwordEncrypted = encrypt(plainPassword);
+      data['avatar'] = getDefaulAvatarUrl(data.firstName, data.lastName);
+  
+      const newadata = await this.notificationSubscriptionFactory.getAllNotificationSubscriptions({}, data);
+      console.log('Generated notificationSubscriptions:', JSON.stringify(newadata, null, 2));
+  
+      if (Array.isArray(newadata) && newadata.length > 0) {
+        const seen = new Set<string>();
+  
+        const sanitized = newadata
+          .filter(sub => !!sub)
+          .map((sub, index) => {
+            if (!sub.id) sub.id = randomUUID();
+            if (!sub.title) sub.title = `user-${data.id}-title-${index + 1}`;
+            if (!sub.id || seen.has(sub.id)) return null;
+            seen.add(sub.id);
+            return sub;
+          })
+          .filter(Boolean);
+  
+        console.log('Sanitized notificationSubscriptions count:', sanitized.length);
+        data.notificationSubscriptions = sanitized;
+      } else {
+        delete data.notificationSubscriptions;
+      }
+  
+      console.log('Final user data before save:', JSON.stringify(data, null, 2));
+  
+      const newUser = new this.usersModel(data);
+      const result = await newUser.save();
+      const res = new UserDto(result);
+  
+      if (res.role === USER_ROLES.CLIENT) {
+        await this.sendWelcomeText(res);
+      }
+  
+      res['token'] = await generateToken(result);
+      return res;
+    } catch (err) {
+      console.error('Error during addUser:', err);
+      if (err.code === 11000) {
+        console.error('Duplicate key error details:', err.keyValue);
+      }
+      throw err;
+    }
+  }
   
   
   

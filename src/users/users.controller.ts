@@ -49,7 +49,7 @@ export class UserController {
   @Post('wp-register')
   async wpRegister(@Body() data: UserDto) {
     if(data.phoneNumber) { data.isMobileVerfied= true};
-    return this.userFactory.addUser(data);
+    return this.userFactory.addUser2(data);
   }
   @Post('facebook/removeUser')
   async removeFacebookUser(@Body('signed_request') signedRequest: any) {
