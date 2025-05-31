@@ -146,7 +146,12 @@ export class UserFactory extends BaseFactory {
           first_name: data.firstName,
           last_name: data.lastName,
           role: 'member',
+          phone_number: data.phoneNumber,
+          zip_code: data.zipCode,
+          dob: data.dob instanceof Date ? data.dob.toISOString().split('T')[0] : undefined,
         };
+        
+        
   
         await Axios.post(
           'https://runmysale.com/wp-json/affiliate-subscription/v1/create_user',
