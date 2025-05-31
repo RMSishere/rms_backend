@@ -294,7 +294,7 @@ async getLeadPaymentStatus(@Query('session_id') sessionId: string) {
 async finalizeSale(@Req() req, @Body() body: { profitAmount: number; requestId: string; success_url: string; cancel_url: string }) {
   const user = req.user;
 
-  if (!body.profitAmount || !body.requestId || !body.success_url || !body.cancel_url) {
+  if (!body.profitAmount || !body.requestId) {
     throw new BadRequestException('Missing required fields');
   }
 
