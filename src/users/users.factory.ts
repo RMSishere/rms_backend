@@ -146,7 +146,7 @@ export class UserFactory extends BaseFactory {
           first_name: data.firstName,
           last_name: data.lastName,
           role: 'member',
-          phone_number: data.phoneNumber,
+          phone_number: data?.phoneNumber ? data.phoneNumber : '',
           zip_code: data.zipCode,
           dob: data.dob instanceof Date ? data.dob.toISOString().split('T')[0] : undefined,
         };

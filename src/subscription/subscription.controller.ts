@@ -301,9 +301,9 @@ async finalizeSale(@Req() req, @Body() body: { profitAmount: number; requestId: 
   // Calculate 5% of the profit
   const appFee = Math.round(body.profitAmount * 0.05 * 100); // convert to cents
 
-  if (appFee < 50) {
-    throw new BadRequestException('Minimum fee is $0.50');
-  }
+  // if (appFee < 50) {
+  //   throw new BadRequestException('Minimum fee is $0.50');
+  // }
 
   const session = await stripe.checkout.sessions.create({
     payment_method_types: ['card'],
