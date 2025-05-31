@@ -290,6 +290,49 @@ async getLeadPaymentStatus(@Query('session_id') sessionId: string) {
   }
 }
 
+@Post('finalize-sale')
+async finalizeSale(@Req() req, @Body() body: { profitAmount: number; requestId: string; success_url: string; cancel_url: string }) {
+  const user = req.user;
+
+  if (!body.profitAmount || !body.requestId || !body.success_url || !body.cancel_url) {
+    throw new BadRequestException('Missing required fields');
+  }
+
+  // Calculate 5% of the profit
+  const appFee = Math.round(body.profitAmount * 0.05 * 100); // convert to cents
+
+  if (appFee < 50) {
+    throw new BadRequestException('Minimum fee is $0.50');
+  }
+
+  const session = await stripe.checkout.sessions.create({
+    payment_method_types: ['card'],
+    mode: 'payment',
+    success_url: 'https://runmysale.com/api/v1/subscription/payment-redirect?status=success',
+    cancel_url: 'https://runmysale.com/api/v1/subscription/payment-redirect?status=cancel',
+    metadata: {
+      userId: user.id.toString(),
+      requestId: body.requestId,
+      type: 'FINALIZE_SALE',
+    },
+    line_items: [{
+      price_data: {
+        currency: 'usd',
+        product_data: {
+          name: 'Finalize Sale Fee (5% Profit)',
+        },
+        unit_amount: appFee,
+      },
+      quantity: 1,
+    }],
+  });
+
+  return {
+    session: session.id,
+    checkoutUrl: session.url,
+    requestId: body.requestId,
+  };
+}
 
 
   @Put('change-plan')
@@ -470,7 +513,7 @@ async getLeadPaymentStatus(@Query('session_id') sessionId: string) {
   @Post('webhook')
   async stripeWebhook(@Body() body: any, @Headers('stripe-signature') sig: string) {
     let event: Stripe.Event;
-console.log('hi');
+console.log('hi',event);
     try {
       event = stripe.webhooks.constructEvent(body, sig, STRIPE_WEBHOOK_SECRET);
     } catch (err) {
