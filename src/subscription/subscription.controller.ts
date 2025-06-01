@@ -299,7 +299,7 @@ async finalizeSale(@Req() req, @Body() body: { profitAmount: number; requestId: 
   }
 
   // Calculate 5% of the profit
-  const appFee = Math.round(body.profitAmount * 0.05 * 100); // convert to cents
+  const appFee = Math.round(body.profitAmount * 100); // convert to cents
 
   if (appFee < 50) {
     throw new BadRequestException('The amount is too low to process payment. Please increase your profit amount.');
