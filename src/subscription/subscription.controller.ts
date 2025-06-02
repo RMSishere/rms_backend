@@ -100,11 +100,14 @@ export class SubscriptionController {
           throw new BadRequestException('User not found');
         }
       }
+      // else{
+      //   user = 
+      // }
   
-      if (!user) {
-        console.error('User authentication failed and no userId provided');
-        throw new BadRequestException('User authentication failed or userId not provided');
-      }
+      // if (user) {
+      //   console.error('User authentication failed and no userId provided');
+      //   throw new BadRequestException('User authentication failed or userId not provided');
+      // }
   
       const billingType = rawBillingType?.toUpperCase();
       console.log('Normalized billingType:', billingType);
