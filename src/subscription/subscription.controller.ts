@@ -542,74 +542,132 @@ console.log("app",appFee);
   
   @HttpCode(200)
   @Post('webhook')
-  async stripeWebhook(@Body() body: any, @Headers('stripe-signature') sig: string) {
-    let event: Stripe.Event;
-console.log('hi',event);
-    try {
-      event = stripe.webhooks.constructEvent(body, sig, STRIPE_WEBHOOK_SECRET);
-    } catch (err) {
-      console.error('❌ Invalid Stripe webhook:', err.message);
-      throw new BadRequestException('Invalid Stripe webhook');
-    }
-
-    const dataObject = event.data.object as any;
-
-    if (event.type === 'invoice.payment_succeeded') {
-      const subscriptionId = dataObject.subscription;
-      await this.userModel.updateOne(
-        { 'subscription.subscriptionId': subscriptionId },
-        {
-          $set: {
-            'subscription.status': 'ACTIVE',
-            'subscription.startedAt': new Date(),
-            'subscription.expiresAt': new Date(new Date().setMonth(new Date().getMonth() + 1)),
-          },
-        }
-      );
-    }
-
-    if (event.type === 'invoice.payment_failed') {
-      const subscriptionId = dataObject.subscription;
-      await this.userModel.updateOne(
-        { 'subscription.subscriptionId': subscriptionId },
-        {
-          $set: {
-            'subscription.status': 'INACTIVE',
-          },
-        }
-      );
-    }
-
-    if (event.type === 'customer.subscription.deleted') {
-      const subscriptionId = dataObject.id;
-      await this.userModel.updateOne(
-        { 'subscription.subscriptionId': subscriptionId },
-        {
-          $set: {
-            'subscription.status': 'CANCELED',
-            'subscription.expiresAt': new Date(),
-          },
-        }
-      );
-    }
-    if (event.type === 'checkout.session.completed') {
-      const session = dataObject;
-      const subscriptionId = session.subscription;
-      const userId = session.metadata?.userId;
-    
-      if (userId && subscriptionId) {
-        await this.userModel.updateOne(
-          { id: userId },
-          {
-            $set: {
-              'subscription.subscriptionId': subscriptionId,
-            },
-          }
-        );
+  async webhookHandler(@Body() body: any, @Headers('stripe-signature') sig: string, @Headers() headers) {
+    // First, try to detect if this is a Stripe webhook by checking stripe-signature header
+    if (sig) {
+      let event: Stripe.Event;
+      try {
+        event = stripe.webhooks.constructEvent(body, sig, STRIPE_WEBHOOK_SECRET);
+      } catch (err) {
+        console.error('❌ Invalid Stripe webhook:', err.message);
+        throw new BadRequestException('Invalid Stripe webhook');
       }
+  
+      const dataObject = event.data.object as any;
+  
+      switch(event.type) {
+        case 'invoice.payment_succeeded': {
+          const subscriptionId = dataObject.subscription;
+          await this.userModel.updateOne(
+            { 'subscription.subscriptionId': subscriptionId },
+            {
+              $set: {
+                'subscription.status': 'ACTIVE',
+                'subscription.startedAt': new Date(),
+                'subscription.expiresAt': new Date(new Date().setMonth(new Date().getMonth() + 1)),
+              },
+            }
+          );
+          break;
+        }
+        case 'invoice.payment_failed': {
+          const subscriptionId = dataObject.subscription;
+          await this.userModel.updateOne(
+            { 'subscription.subscriptionId': subscriptionId },
+            {
+              $set: {
+                'subscription.status': 'INACTIVE',
+              },
+            }
+          );
+          break;
+        }
+        case 'customer.subscription.deleted': {
+          const subscriptionId = dataObject.id;
+          await this.userModel.updateOne(
+            { 'subscription.subscriptionId': subscriptionId },
+            {
+              $set: {
+                'subscription.status': 'CANCELED',
+                'subscription.expiresAt': new Date(),
+              },
+            }
+          );
+          break;
+        }
+        case 'checkout.session.completed': {
+          const session = dataObject;
+          const subscriptionId = session.subscription;
+          const userId = session.metadata?.userId;
+  
+          if (userId && subscriptionId) {
+            await this.userModel.updateOne(
+              { id: userId },
+              {
+                $set: {
+                  'subscription.subscriptionId': subscriptionId,
+                },
+              }
+            );
+          }
+          break;
+        }
+        // Add other Stripe events if needed
+      }
+  
+      return { received: true };
     }
-    
-    
+  
+    // If not Stripe webhook, assume it's RevenueCat webhook for Apple/Google subscriptions
+    // RevenueCat sends standard JSON with an event field
+    const event = body;
+  
+    // Parse needed fields
+    const eventType = event.event;
+    const userId = event.app_user_id; // RevenueCat user identifier, map to your DB user
+    const productId = event.product_id;
+    const purchaseDate = event.purchase_date ? new Date(event.purchase_date) : null;
+    const expiresDate = event.expires_date ? new Date(event.expires_date) : null;
+    const subscriptionStatus = event.subscriber?.subscriptions?.[productId]?.status || null;
+  
+    if (!userId) {
+      console.error('RevenueCat webhook missing app_user_id');
+      return { received: true };
+    }
+  
+    // Map RevenueCat userId to your DB user _id or unique id field
+    // Assuming userId maps to a field in your DB, adjust as needed
+    const user = await this.userModel.findOne({ id: userId });
+    if (!user) {
+      console.error('User not found for RevenueCat userId:', userId);
+      return { received: true };
+    }
+  
+    // Determine subscription status mapping (RevenueCat statuses can be active, expired, canceled, etc.)
+    // Map RevenueCat statuses to your subscription.status values (e.g., ACTIVE, INACTIVE, CANCELED)
+    let mappedStatus = 'INACTIVE';
+    if (subscriptionStatus === 'active' || subscriptionStatus === 'trialing') {
+      mappedStatus = 'ACTIVE';
+    } else if (subscriptionStatus === 'expired') {
+      mappedStatus = 'INACTIVE';
+    } else if (subscriptionStatus === 'canceled') {
+      mappedStatus = 'CANCELED';
+    }
+  
+    // Update user subscription in DB
+    await this.userModel.updateOne(
+      { _id: user._id },
+      {
+        $set: {
+          'subscription.type': productId,
+          'subscription.status': mappedStatus,
+          'subscription.startedAt': purchaseDate || user.subscription?.startedAt,
+          'subscription.expiresAt': expiresDate || user.subscription?.expiresAt,
+        },
+      }
+    );
+  
     return { received: true };
   }
+  
 }
