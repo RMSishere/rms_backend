@@ -87,10 +87,10 @@ export class SubscriptionController {
   }
   @Post('subscribe')
   async subscribe(@Req() req, @Body() body) {
-    const { plan, billingType: rawBillingType, userId: bodyUserId } = body;
+    const { plan, billingType: rawBillingType, userId: bodyUserId, subscriptionSource, subscriptionStatus } = body;
     let user = req.user;
   
-    console.log('Subscribe called with:', { plan, billingType: rawBillingType, bodyUserId });
+    console.log('Subscribe called with:', { plan, billingType: rawBillingType, bodyUserId, subscriptionSource, subscriptionStatus });
   
     try {
       if (!user && bodyUserId) {
@@ -100,14 +100,6 @@ export class SubscriptionController {
           throw new BadRequestException('User not found');
         }
       }
-      // else{
-      //   user = 
-      // }
-  
-      // if (user) {
-      //   console.error('User authentication failed and no userId provided');
-      //   throw new BadRequestException('User authentication failed or userId not provided');
-      // }
   
       const billingType = rawBillingType?.toUpperCase();
       console.log('Normalized billingType:', billingType);
@@ -124,15 +116,54 @@ export class SubscriptionController {
         throw new BadRequestException('Invalid plan');
       }
   
-      console.log('Plan details found:', planDetails);
+      // If subscriptionSource is apple/google, we skip Stripe flow and just update DB
+      if (subscriptionSource === 'APPLE' || subscriptionSource === 'GOOGLE') {
+        // Use subscriptionStatus from request or default to INACTIVE
+        const status = subscriptionStatus || 'INACTIVE';
   
+        // Calculate expiry date for record-keeping (optional, adjust as needed)
+        const expiresAt = new Date();
+        if (billingType === 'MONTHLY') {
+          expiresAt.setMonth(expiresAt.getMonth() + 1);
+        } else if (billingType === 'YEARLY') {
+          expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+        }
+  
+        await this.userModel.updateOne(
+          { _id: user._id },
+          {
+            $set: {
+              subscription: {
+                subscriptionId: '', // or update with actual if available from mobile/webhook
+                customerId: '', // no Stripe customer
+                type: plan,
+                billingType,
+                status,
+                startedAt: new Date(),
+                expiresAt,
+                jobRequestCountThisMonth: 0,
+                pricingRequestsUsed: 0,
+                customVideosUsed: 0,
+                pitchReviewsUsed: 0,
+                lastReset: new Date(),
+              },
+            },
+          }
+        );
+  
+        console.log(`Subscription updated for Apple/Google user: ${user._id}`);
+  
+        return {
+          message: `Subscription status updated for ${subscriptionSource} subscription.`,
+        };
+      }
+  
+      // Original Stripe flow (unchanged)
       const priceId = planDetails.stripe?.[billingType];
       if (!priceId) {
         console.error(`Stripe price ID missing for plan "${plan}" and billingType "${billingType}"`);
         throw new BadRequestException('Stripe price ID not configured for this plan');
       }
-  
-      console.log('Using Stripe price ID:', priceId);
   
       // Create or reuse Stripe customer
       const customer = await stripe.customers.create({
@@ -146,8 +177,8 @@ export class SubscriptionController {
         mode: 'subscription',
         customer: customer.id,
         line_items: [{ price: priceId, quantity: 1 }],
-        success_url: `https://your-frontend-url.com/subscription-success?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `https://your-frontend-url.com/subscription-cancelled`,
+        success_url: 'https://your-frontend-url.com/subscription-success?session_id={CHECKOUT_SESSION_ID}',
+        cancel_url: 'https://your-frontend-url.com/subscription-cancelled',
         metadata: {
           userId: user.id.toString(),
           plan,
@@ -155,17 +186,13 @@ export class SubscriptionController {
         },
       });
   
-      // Calculate expiry date (for your DB)
       const expiresAt = new Date();
       if (billingType === 'MONTHLY') {
         expiresAt.setMonth(expiresAt.getMonth() + 1);
       } else if (billingType === 'YEARLY') {
         expiresAt.setFullYear(expiresAt.getFullYear() + 1);
-      } else {
-        console.warn('Unknown billingType for expiry calculation:', billingType);
       }
   
-      // Save subscription record with status INACTIVE; webhook updates on payment success
       await this.userModel.updateOne(
         { _id: user._id },
         {
@@ -199,6 +226,7 @@ export class SubscriptionController {
       throw error;
     }
   }
+  
   
   
   
