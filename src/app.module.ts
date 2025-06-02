@@ -96,7 +96,7 @@ const commonExcludeRoutes = [
     path: `${GLOBAL_PREFIX}/auth/checkPhoneNumber`,
     method: RequestMethod.POST,
   },
-  { path: `${GLOBAL_PREFIX}/payment/paypal/webhook`, method: RequestMethod.POST },
+  { path: `${GLOBAL_PREFIX}/subscription/webhook`, method: RequestMethod.POST },
   { path: `${GLOBAL_PREFIX}/payment/paypal`, method: RequestMethod.GET },
 ];
 
