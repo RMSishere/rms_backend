@@ -469,12 +469,16 @@ console.log("app",appFee);
 
   @Put('use-job-credit')
   async useCredit(@Req() req) {
+
     const user = req.user;
+    console.log("user",user);
+    const userdata = await this.userModel.findById(req.user._id);
+    console.log(userdata.subscription);
     const plan = getCustomerPlanDetails(user.subscription?.type);
-    if (!plan) return { error: 'No active plan' };
+    if (!userdata.subscription) return { error: 'No active plan' };
 
-    const newCount = (user.subscription.jobRequestCountThisMonth || 0) + 1;
-
+    const newCount = (userdata.subscription.jobRequestCountThisMonth || 0) + 1;
+console.log(newCount);
     await this.userModel.updateOne(
       { id: user.id },
       { $set: { 'subscription.jobRequestCountThisMonth': newCount } }

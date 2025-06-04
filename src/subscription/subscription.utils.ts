@@ -1,6 +1,7 @@
 import { CUSTOMER_PLANS, AFFILIATE_PLANS } from './plan';
 
 export function getCustomerPlanDetails(plan: string) {
+  console.log("hello",plan);
   return CUSTOMER_PLANS[plan] || null;
 }
 
