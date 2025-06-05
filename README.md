@@ -46,4 +46,4 @@ Other pictures Affiliate wants to upload
    4.5: Clients and Affiliates can send any compliant to Admin about their contract and queries.
    4.6: Other system settings and preferences in the dashboard: Adjustment of settings which will affect the working of the system and provision for add/update/delete of master data if any or any particular request by the Client and the Client .
    4.7: Admin will have the payment status, while releasing, any ticket for work quality, client satisfaction etc..
-   4.8: Admin can verify every affiliate with their business details and so..
+   4.8: Admin can verify every affiliate with their business details and so..# rms_Backend
