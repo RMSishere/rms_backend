@@ -31,6 +31,7 @@ import { ScheduleFactory } from '../scheduleJob/scheduleJob.factory';
 import { RequestDto } from './request.dto';
 
 import moment = require('moment-timezone');
+import { getCustomerPlanDetails } from 'src/subscription/subscription.utils';
 
 @Injectable()
 export class RequestFactory extends BaseFactory {
@@ -53,7 +54,12 @@ export class RequestFactory extends BaseFactory {
       data.id = await this.generateSequentialId('request');
       data.requesterOwner = user;
       data.createdBy = this.getCreatedBy(user);
+      const userdata = await this.userModel.findById(user.id);
+          const plan = getCustomerPlanDetails(userdata.subscription?.type);
 
+if (userdata.subscription.jobRequestCountThisMonth >= plan.jobRequestLimit) {
+      throw new BadRequestException('Job request limit exceeded for this month');
+    }
       const affiliates: User[] = await this.userFactory.getApprovedAffiliates({
         'businessProfile.nearByZipCodes': data.zip,
       });

@@ -46,11 +46,18 @@ export class UserController {
   async addUser(@Body() data: UserDto) {
     return this.userFactory.addUser(data);
   }
-  @Post('wp-register')
-  async wpRegister(@Body() data: UserDto) {
-    if(data.phoneNumber) { data.isMobileVerfied= true};
-    return this.userFactory.addUser2(data);
+@Post('wp-register')
+async wpRegister(@Body() data: UserDto) {
+  if (data.phoneNumber) {
+    data.isMobileVerfied = true;
   }
+
+  // Use the index if needed
+  console.log('Received index:', data.index);
+
+  return this.userFactory.addUser2(data);
+}
+
   @Post('facebook/removeUser')
   async removeFacebookUser(@Body('signed_request') signedRequest: any) {
     return this.userFactory.removeFacebookUser(signedRequest);

@@ -30,6 +30,8 @@ export class UserDto extends BaseDto implements User {
     //this.appleProvider = user.appleProvider;
     this.wordpressProvider = user.wordpressProvider;
     this.dob = user.dob;
+      this.index = user.index; // <-- Add this line
+
   }
 
   firstName: string;
@@ -61,4 +63,6 @@ export class UserDto extends BaseDto implements User {
     token: string;
   };
   dob: Date;
+    index?: number; // <-- Add this optional field
+
 }

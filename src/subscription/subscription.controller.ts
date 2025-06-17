@@ -468,31 +468,49 @@ console.log("app",appFee);
   
 
   @Put('use-job-credit')
-  async useCredit(@Req() req) {
+@Put('use-job-credit')
+async useCredit(@Req() req) {
+  const user = req.user;
+  const userdata = await this.userModel.findById(req.user._id);
 
-    const user = req.user;
-    console.log("user",user);
-    const userdata = await this.userModel.findById(req.user._id);
-    console.log(userdata.subscription);
-    const plan = getCustomerPlanDetails(user.subscription?.type);
-    if (!userdata.subscription) return { error: 'No active plan' };
+  // Get the user's current subscription plan
+  const plan = getCustomerPlanDetails(user.subscription?.type);
+  if (!userdata.subscription || !plan) return { error: 'No active plan' };
 
-    const newCount = (userdata.subscription.jobRequestCountThisMonth || 0) + 1;
-console.log(newCount);
-    await this.userModel.updateOne(
-      { id: user.id },
-      { $set: { 'subscription.jobRequestCountThisMonth': newCount } }
-    );
-
-    return { success: true };
+  // Check the current count of job requests for this month
+  const jobRequestCount = userdata.subscription.jobRequestCountThisMonth || 0;
+  if (jobRequestCount >= plan.jobRequestLimit) {
+    return { error: 'Job request limit exceeded for this month' };
   }
 
-  @Get('eligibility-check')
-  async checkEligibility(@Req() req, @Body('type') jobType: 'SELL' | 'REMOVE' | 'OTHER') {
-    return {
-      canPost: canPostJob(req.user, jobType),
-    };
+  // Increment job request count for the user
+  const newCount = jobRequestCount + 1;
+  await this.userModel.updateOne(
+    { id: user.id },
+    { $set: { 'subscription.jobRequestCountThisMonth': newCount } }
+  );
+
+  return { success: true };
+}
+
+@Get('eligibility-check')
+async checkEligibility(@Req() req, @Body('type') jobType: 'SELL' | 'REMOVE' | 'OTHER') {
+  const user = req.user;
+
+  // Get the customer's subscription plan details
+  const plan = getCustomerPlanDetails(user.subscription?.type);
+  let canPost = false;
+
+  // Check if the plan allows posting the requested job type
+  if (jobType === 'SELL' || jobType === 'REMOVE') {
+    canPost = canPostJob(req.user, jobType);
+  } else {
+    canPost = plan?.allowExtraServices || false;
   }
+
+  return { canPost };
+}
+
 
   @Put('reset-monthly-limits')
   @Roles(USER_ROLES.ADMIN)
