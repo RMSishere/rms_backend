@@ -32,6 +32,7 @@ import { RequestDto } from './request.dto';
 
 import moment = require('moment-timezone');
 import { getCustomerPlanDetails } from 'src/subscription/subscription.utils';
+import { sendTemplateEmail } from 'src/util/sendMail';
 
 @Injectable()
 export class RequestFactory extends BaseFactory {
@@ -118,17 +119,10 @@ export class RequestFactory extends BaseFactory {
       }).catch(() => null);
 
       // ✅ Send to whiteglove email if user has WHITE_GLOVE plan
-      // if (userdata.subscription?.type === 'WHITE_GLOVE') {
-      //   await this.notificationfactory.sendCustomEmail({
-      //     to: 'whiteglove@runmysale.com',
-      //     subject: `New WHITE GLOVE Request - ${requestLabel}`,
-      //     template: MAIL_TEMPLATES.NEW_REQUEST,
-      //     locals: {
-      //       title: `White Glove Request - ${requestLabel}`,
-      //       description: `A new White Glove request was submitted in zip code ${request.zip} by ${user.firstName} ${user.lastName}.`,
-      //     },
-      //   }).catch(() => null);
-      // }
+  await sendTemplateEmail('whiteglove@runmysale.com', MAIL_TEMPLATES.NEW_REQUEST, {
+  title: `White Glove Request - ${requestLabel}`,
+  description: `A new White Glove request was submitted in zip code ${request.zip} by ${user.firstName} ${user.lastName}.`,
+});
     }
 
     return request;
