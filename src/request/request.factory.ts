@@ -118,17 +118,17 @@ export class RequestFactory extends BaseFactory {
       }).catch(() => null);
 
       // ✅ Send to whiteglove email if user has WHITE_GLOVE plan
-      if (userdata.subscription?.type === 'WHITE_GLOVE') {
-        await this.notificationfactory.sendCustomEmail({
-          to: 'whiteglove@runmysale.com',
-          subject: `New WHITE GLOVE Request - ${requestLabel}`,
-          template: MAIL_TEMPLATES.NEW_REQUEST,
-          locals: {
-            title: `White Glove Request - ${requestLabel}`,
-            description: `A new White Glove request was submitted in zip code ${request.zip} by ${user.firstName} ${user.lastName}.`,
-          },
-        }).catch(() => null);
-      }
+      // if (userdata.subscription?.type === 'WHITE_GLOVE') {
+      //   await this.notificationfactory.sendCustomEmail({
+      //     to: 'whiteglove@runmysale.com',
+      //     subject: `New WHITE GLOVE Request - ${requestLabel}`,
+      //     template: MAIL_TEMPLATES.NEW_REQUEST,
+      //     locals: {
+      //       title: `White Glove Request - ${requestLabel}`,
+      //       description: `A new White Glove request was submitted in zip code ${request.zip} by ${user.firstName} ${user.lastName}.`,
+      //     },
+      //   }).catch(() => null);
+      // }
     }
 
     return request;
