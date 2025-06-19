@@ -44,13 +44,17 @@ const commonExcludeRoutes = [
   // { path: `${GLOBAL_PREFIX}/auth/wp-register`, method: RequestMethod.POST },
   { path: `${GLOBAL_PREFIX}/auth/wp-register`, method: RequestMethod.POST },
   { path: `${GLOBAL_PREFIX}/subscription/update-subscription-id`, method: RequestMethod.PUT },
-
+  
   { path: `${GLOBAL_PREFIX}/auth/facebook`, method: RequestMethod.POST },
   { path: `${GLOBAL_PREFIX}/auth/apple`, method: RequestMethod.POST },
   {
     path: `${GLOBAL_PREFIX}/auth/facebook/deletion`,
     method: RequestMethod.GET,
   },
+  {
+  path: `${GLOBAL_PREFIX}/signedUrl`,
+  method: RequestMethod.GET,
+},
   {
     path: `${GLOBAL_PREFIX}/auth/facebook/removeUser`,
     method: RequestMethod.POST,
