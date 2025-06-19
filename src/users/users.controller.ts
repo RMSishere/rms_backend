@@ -187,28 +187,32 @@ async wpRegister(@Body() data: UserDto) {
     return this.userFactory.addUserMiscInfo(data, req.user);
   }
 
-  @Post('helpMessage')
-  async addHelpMessage(@Req() req: Request, @Body() body: any) {
-    // Extract token from body or headers
-    const token = body.token || req.headers['token'];
-  
-    if (!token) {
-      throw new HttpException('Missing token in request', HttpStatus.BAD_REQUEST);
-    }
-  
-    let decodedUser;
-    try {
-      decodedUser = jwt.verify(token, process.env.JWT_SECRET_KEY); // Use your actual JWT secret
-    } catch (err) {
-      throw new HttpException('Invalid token', HttpStatus.UNAUTHORIZED);
-    }
-  
-    // Get the actual help message data
-    const data = { ...body };
-    delete data.token;
-  
-    return this.userFactory.addHelpMessage(data, decodedUser);
+@Post('helpMessage')
+async addHelpMessage(@Req() req: Request, @Body() body: any) {
+  const token = body.token || req.headers['token'];
+
+  if (!token) {
+    throw new HttpException('Missing token in request', HttpStatus.BAD_REQUEST);
   }
+
+  let decodedUser;
+  try {
+    decodedUser = jwt.verify(token, process.env.JWT_SECRET_KEY);
+  } catch (err) {
+    throw new HttpException('Invalid token', HttpStatus.UNAUTHORIZED);
+  }
+
+  const data = { ...body };
+  delete data.token;
+
+  // ✅ Mark as cleanout strategy if cleanout flag exists
+  if (data.cleanout === true || data.cleanout === 'true') {
+    data.isCleanoutStrategy = true;
+  }
+
+  return this.userFactory.addHelpMessage(data, decodedUser);
+}
+
 
   // @Roles(USER_ROLES.ADMIN)
   @Put('affiliate/:id/deleteProfile')

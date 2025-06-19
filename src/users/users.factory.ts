@@ -1015,66 +1015,77 @@ async addUser2(data: any): Promise<User | APIMessage> {
     }
   }
 
+async addHelpMessage(data: HelpMessage, user: User): Promise<HelpMessage> {
+  try {
+    console.log('--- addHelpMessage called ---');
+    console.log('Incoming user:', user);
+    console.log('Incoming data:', data);
 
-  async addHelpMessage(data: HelpMessage, user: User): Promise<HelpMessage> {
-    try {
-      console.log('--- addHelpMessage called ---');
-      console.log('Incoming user:', user);
-      console.log('Incoming data:', data);
-  
-      if (!user || !user.email) {
-        console.error('Invalid or missing user');
-        throw new HttpException('Invalid or missing user in request', HttpStatus.BAD_REQUEST);
-      }
-  
-      // Generate a unique sequential ID for the HelpMessage
-      const newId = await this.generateSequentialId('HelpMessage');
-      console.log('Generated HelpMessage ID:', newId);
-      data['id'] = newId;
-  
-      // Attach user and creator info
-      data['user'] = user;
-      data.createdBy = this.getCreatedBy(user);
-      console.log('Final help message data before save:', data);
-  
-      // Save help message to DB
-      const newHelpMessage = new this.helpMessageModel(data);
-      let res = await newHelpMessage.save();
-      console.log('Help message saved:', res);
-  
-      // Populate user info
-      res = await res.populate('user').execPopulate();
-      console.log('Populated help message:', res);
-  
-      // Transform to DTO
-      const helpMessage = new HelpMessageDto(res);
-      console.log('HelpMessage DTO:', helpMessage);
-  
+    if (!user || !user.email) {
+      console.error('Invalid or missing user');
+      throw new HttpException('Invalid or missing user in request', HttpStatus.BAD_REQUEST);
+    }
+
+    // Generate a unique sequential ID for the HelpMessage
+    const newId = await this.generateSequentialId('HelpMessage');
+    console.log('Generated HelpMessage ID:', newId);
+    data['id'] = newId;
+
+    // Attach user and creator info
+    data['user'] = user;
+    data.createdBy = this.getCreatedBy(user);
+    console.log('Final help message data before save:', data);
+
+    // Save help message to DB
+    const newHelpMessage = new this.helpMessageModel(data);
+    let res = await newHelpMessage.save();
+    console.log('Help message saved:', res);
+
+    // Populate user info
+    res = await res.populate('user').execPopulate();
+    console.log('Populated help message:', res);
+
+    // Transform to DTO
+    const helpMessage = new HelpMessageDto(res);
+    console.log('HelpMessage DTO:', helpMessage);
+
+    // Check if it's a cleanout strategy message
+    const isCleanoutRequest = data.cleanout === true;
+    
+    if (isCleanoutRequest) {
+      console.log('Sending email to cleanout strategy team...');
+      await sendTemplateEmail('cleanoutstrategy@runmysale.com', MAIL_TEMPLATES.HELP_MESSAGE, {
+        message: helpMessage.message,
+        user: helpMessage.user,
+      });
+    } else {
       // Fetch admin and send email
       const admin = await this.getAdmin();
       console.log('Admin user:', admin);
-  
+
       if (admin && admin.email) {
         console.log('Sending help message email to admin...');
-        sendTemplateEmail(admin.email, MAIL_TEMPLATES.HELP_MESSAGE, {
+        await sendTemplateEmail(admin.email, MAIL_TEMPLATES.HELP_MESSAGE, {
           message: helpMessage.message,
           user: helpMessage.user,
         });
       } else {
         console.warn('Admin not found or missing email, no email sent.');
       }
-  
-      console.log('--- addHelpMessage completed successfully ---');
-      return helpMessage;
-  
-    } catch (err) {
-      console.error('Error in addHelpMessage:', err);
-      throw new HttpException(
-        `Failed to add help message: ${err.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
     }
+
+    console.log('--- addHelpMessage completed successfully ---');
+    return helpMessage;
+
+  } catch (err) {
+    console.error('Error in addHelpMessage:', err);
+    throw new HttpException(
+      `Failed to add help message: ${err.message}`,
+      HttpStatus.INTERNAL_SERVER_ERROR,
+    );
   }
+}
+
   
   async deleteAffiliateProfileById(id: string): Promise<{ success: boolean; message: string }> {
     try {
