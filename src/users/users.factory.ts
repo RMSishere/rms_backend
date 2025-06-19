@@ -289,7 +289,8 @@ export class UserFactory extends BaseFactory {
       data.password = await getEncryptedPassword(plainPassword);
       data.passwordEncrypted = encrypt(plainPassword);
       data['avatar'] = getDefaulAvatarUrl(data.firstName, data.lastName);
-  
+      data.isActive = true; // enforce it just before save
+
       const newadata = await this.notificationSubscriptionFactory.getAllNotificationSubscriptions({}, data);
       console.log('Generated notificationSubscriptions:', JSON.stringify(newadata, null, 2));
   
