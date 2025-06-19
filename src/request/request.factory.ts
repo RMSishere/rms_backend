@@ -49,84 +49,94 @@ export class RequestFactory extends BaseFactory {
     super(countersModel);
   }
 
-  async createRequest(data: Request, user: User): Promise<Request> {
-    try {
-      data.id = await this.generateSequentialId('request');
-      data.requesterOwner = user;
-      data.createdBy = this.getCreatedBy(user);
-      const userdata = await this.userModel.findById(user.id);
-          const plan = getCustomerPlanDetails(userdata.subscription?.type);
+ async createRequest(data: Request, user: User): Promise<Request> {
+  try {
+    data.id = await this.generateSequentialId('request');
+    data.requesterOwner = user;
+    data.createdBy = this.getCreatedBy(user);
+    
+    const userdata = await this.userModel.findById(user.id);
+    const plan = getCustomerPlanDetails(userdata.subscription?.type);
 
-if (userdata.subscription.jobRequestCountThisMonth >= plan.jobRequestLimit) {
+    if (userdata.subscription.jobRequestCountThisMonth >= plan.jobRequestLimit) {
       throw new BadRequestException('Job request limit exceeded for this month');
     }
-      const affiliates: User[] = await this.userFactory.getApprovedAffiliates({
-        'businessProfile.nearByZipCodes': data.zip,
-      });
-      const admin = await this.userFactory.getAdmin();
 
-      data.price = await this.findRequestPrice(data.zip, affiliates.length);
+    const affiliates: User[] = await this.userFactory.getApprovedAffiliates({
+      'businessProfile.nearByZipCodes': data.zip,
+    });
 
-      const newRequest = new this.requestModel(data);
-      const res = await newRequest.save();
-      const request = new RequestDto(res);
+    const admin = await this.userFactory.getAdmin();
 
-      if (request && affiliates && affiliates.length) {
-        let requestLabel = '';
+    data.price = await this.findRequestPrice(data.zip, affiliates.length);
 
-        if (
-          SERVICES[request.requestType] &&
-          SERVICES[request.requestType].label
-        ) {
-          requestLabel = SERVICES[request.requestType].label;
-        }
+    const newRequest = new this.requestModel(data);
+    const res = await newRequest.save();
+    const request = new RequestDto(res);
 
-        const title = `New Service Request - ${requestLabel}`;
-        const description =
-          "Congrats! You've got a new service request in your area.";
-        const adminDescription = `Congrats! There is a new service request in zip code ${request.zip}.`;
+    if (request && affiliates && affiliates.length) {
+      let requestLabel = '';
 
-        // send notifications
-        this.notificationfactory
-          .sendNotification(affiliates, NOTIFICATION_TYPES.NEW_JOB, {
-            inApp: {
-              message: { requestId: request.id, title, description },
-            },
-            text: {
-              message: `${title}\n${description}`,
-            },
-            email: {
-              template: MAIL_TEMPLATES.NEW_REQUEST,
-              locals: { title, description },
-            },
-          })
-          .catch(() => null); // discard error
-
-        this.notificationfactory
-          .sendNotification(admin, NOTIFICATION_TYPES.NEW_JOB, {
-            inApp: {
-              message: {
-                requestId: request.id,
-                title,
-                description: adminDescription,
-              },
-            },
-            text: {
-              message: `${title}\n${adminDescription}`,
-            },
-            email: {
-              template: MAIL_TEMPLATES.NEW_REQUEST,
-              locals: { title, description: adminDescription },
-            },
-          })
-          .catch(() => null); // discard error
+      if (SERVICES[request.requestType] && SERVICES[request.requestType].label) {
+        requestLabel = SERVICES[request.requestType].label;
       }
 
-      return request;
-    } catch (err) {
-      throw err;
+      const title = `New Service Request - ${requestLabel}`;
+      const description = "Congrats! You've got a new service request in your area.";
+      const adminDescription = `Congrats! There is a new service request in zip code ${request.zip}.`;
+
+      // ✅ Send to affiliates
+      this.notificationfactory.sendNotification(affiliates, NOTIFICATION_TYPES.NEW_JOB, {
+        inApp: {
+          message: { requestId: request.id, title, description },
+        },
+        text: {
+          message: `${title}\n${description}`,
+        },
+        email: {
+          template: MAIL_TEMPLATES.NEW_REQUEST,
+          locals: { title, description },
+        },
+      }).catch(() => null);
+
+      // ✅ Send to admin
+      this.notificationfactory.sendNotification(admin, NOTIFICATION_TYPES.NEW_JOB, {
+        inApp: {
+          message: {
+            requestId: request.id,
+            title,
+            description: adminDescription,
+          },
+        },
+        text: {
+          message: `${title}\n${adminDescription}`,
+        },
+        email: {
+          template: MAIL_TEMPLATES.NEW_REQUEST,
+          locals: { title, description: adminDescription },
+        },
+      }).catch(() => null);
+
+      // ✅ Send to whiteglove email if user has WHITE_GLOVE plan
+      if (userdata.subscription?.type === 'WHITE_GLOVE') {
+        await this.notificationfactory.sendCustomEmail({
+          to: 'whiteglove@runmysale.com',
+          subject: `New WHITE GLOVE Request - ${requestLabel}`,
+          template: MAIL_TEMPLATES.NEW_REQUEST,
+          locals: {
+            title: `White Glove Request - ${requestLabel}`,
+            description: `A new White Glove request was submitted in zip code ${request.zip} by ${user.firstName} ${user.lastName}.`,
+          },
+        }).catch(() => null);
+      }
     }
+
+    return request;
+  } catch (err) {
+    throw err;
   }
+}
+
 
   async getAllRequests(params: any, user: User): Promise<PaginatedData> {
     const skip = parseInt(params.skip) || 0;

@@ -46,6 +46,8 @@ export class UserController {
   async addUser(@Body() data: UserDto) {
     return this.userFactory.addUser(data);
   }
+
+
 @Post('wp-register')
 async wpRegister(@Body() data: UserDto) {
   if (data.phoneNumber) {

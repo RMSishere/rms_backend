@@ -54,7 +54,7 @@ const commonExcludeRoutes = [
   {
   path: `${GLOBAL_PREFIX}/signedUrl`,
   method: RequestMethod.GET,
-},
+ },
   {
     path: `${GLOBAL_PREFIX}/auth/facebook/removeUser`,
     method: RequestMethod.POST,
