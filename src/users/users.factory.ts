@@ -1050,7 +1050,7 @@ async addHelpMessage(data: HelpMessage, user: User): Promise<HelpMessage> {
     console.log('HelpMessage DTO:', helpMessage);
 
     // Check if it's a cleanout strategy message
-    const isCleanoutRequest = data.cleanout === true;
+    const isCleanoutRequest = data.CLEANOUT === true;
     
     if (isCleanoutRequest) {
       console.log('Sending email to cleanout strategy team...');

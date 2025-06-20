@@ -6,10 +6,10 @@ export class HelpMessageDto extends BaseDto implements HelpMessage {
 
     this.user = helpMessage.user;
     this.message = helpMessage.message;
-    this.cleanout = helpMessage.cleanout;
+    this.CLEANOUT = helpMessage.CLEANOUT;
   }
 
   user: User;
   message: string;
-  cleanout: boolean;
+  CLEANOUT: boolean;
 }

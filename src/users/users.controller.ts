@@ -209,6 +209,10 @@ async addHelpMessage(@Req() req: Request, @Body() body: any) {
   if (data.cleanout === true || data.cleanout === 'true') {
     data.isCleanoutStrategy = true;
   }
+  if(data.itemized === true){
+    data.itemized = true;
+  }
+
 
   return this.userFactory.addHelpMessage(data, decodedUser);
 }
