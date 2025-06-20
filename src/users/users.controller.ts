@@ -202,21 +202,25 @@ async addHelpMessage(@Req() req: Request, @Body() body: any) {
     throw new HttpException('Invalid token', HttpStatus.UNAUTHORIZED);
   }
 
-  const data = { ...body };
+  // Handle both flat and nested data (body or body.payload or body.data.payload)
+  const data =
+    body?.payload || body?.data?.payload || body?.data || body;
+
   delete data.token;
 
-  // ✅ Mark as cleanout strategy if cleanout flag exists
   if (data.cleanout === true || data.cleanout === 'true') {
     data.isCleanoutStrategy = true;
   }
-  if(data.itemized === true){
+  if (data.itemized === true) {
     data.itemized = true;
   }
-  if(data.SUPPORT === true){
+  if (data.SUPPORT === true) {
     data.SUPPORT = true;
   }
+
   return this.userFactory.addHelpMessage(data, decodedUser);
 }
+
 
 
   // @Roles(USER_ROLES.ADMIN)
