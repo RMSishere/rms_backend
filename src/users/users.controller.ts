@@ -212,8 +212,9 @@ async addHelpMessage(@Req() req: Request, @Body() body: any) {
   if(data.itemized === true){
     data.itemized = true;
   }
-
-
+  if(data.SUPPORT === true){
+    data.SUPPORT = true;
+  }
   return this.userFactory.addHelpMessage(data, decodedUser);
 }
 
