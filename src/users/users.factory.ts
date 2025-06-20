@@ -567,73 +567,76 @@ async addUser2(data: any): Promise<User | APIMessage> {
 
   // import { HttpException, HttpStatus } from '@nestjs/common';
 
-  async login(
-    email: string,
-    password: string,
-    role?: string,
-    device?: Device,
-  ): Promise<User | APIMessage> {
-    try {
-      const query: any = {
-        email: email.toLowerCase(),
-      };
-      if (role) {
-        query.role = role;
-      }
-      const user = await this.usersModel.findOne(query).exec();
-      let isPasswordCorrect = false;
-      if (user) {
-        isPasswordCorrect = await verifyPassword(password, user.password);
-      }
-  
-      if (user && isPasswordCorrect) {
-        const newUser = new UserDto(user);
-        // check if user logged in with new device
-        if (
-          device &&
-          !newUser.devices.map(dt => dt.token).includes(device.token)
-        ) {
-          // if yes then store new device info
-          const newDevices = newUser.devices.concat([device]);
-          const condition = { id: user.id, isActive: true };
-          const newValue = { $set: { devices: newDevices } };
-          await this.usersModel.updateOne(condition, newValue);
-        }
-  
-        newUser['token'] = await generateToken(user);
-        return newUser;
-      }
-  
-      // check if wordpress user
-      try {
-        const res = await Axios.post(process.env.WP_LOGIN_URL, {
-          username: email,
-          password
-        });
-  
-        if (res.data?.token) {
-          const wpData = res.data;
-          return await this.loginWithWordpress(wpData, password);
-        }
-      } catch (error) {
-        if (error?.response?.data?.data?.status === 403) {
-          throw new HttpException(
-            new APIMessage('Invalid Credentials!', APIMessageTypes.ERROR),
-            HttpStatus.UNAUTHORIZED
-          );
-        }
-        throw error;
-      }
-  
-      throw new HttpException(
-        new APIMessage('Invalid Credentials!', APIMessageTypes.ERROR),
-        HttpStatus.UNAUTHORIZED
-      );
-    } catch (err) {
-      throw err;
+async login(
+  email: string,
+  password: string,
+  role?: string,
+  device?: Device,
+): Promise<User | APIMessage> {
+  try {
+    const query: any = {
+      email: email.toLowerCase(),
+    };
+    if (role) {
+      query.role = role;
     }
+    const user = await this.usersModel.findOne(query).exec();
+    let isPasswordCorrect = false;
+    if (user) {
+      isPasswordCorrect = await verifyPassword(password, user.password);
+    }
+
+    if (user && isPasswordCorrect) {
+      const newUser = new UserDto(user);
+
+      // Include subscription details
+      newUser['subscription'] = user.subscription;
+
+      // Check if user logged in with a new device
+      if (
+        device &&
+        !newUser.devices.map(dt => dt.token).includes(device.token)
+      ) {
+        const newDevices = newUser.devices.concat([device]);
+        const condition = { id: user.id, isActive: true };
+        const newValue = { $set: { devices: newDevices } };
+        await this.usersModel.updateOne(condition, newValue);
+      }
+
+      newUser['token'] = await generateToken(user);
+      return newUser;
+    }
+
+    // Check if WordPress user
+    try {
+      const res = await Axios.post(process.env.WP_LOGIN_URL, {
+        username: email,
+        password,
+      });
+
+      if (res.data?.token) {
+        const wpData = res.data;
+        return await this.loginWithWordpress(wpData, password);
+      }
+    } catch (error) {
+      if (error?.response?.data?.data?.status === 403) {
+        throw new HttpException(
+          new APIMessage('Invalid Credentials!', APIMessageTypes.ERROR),
+          HttpStatus.UNAUTHORIZED,
+        );
+      }
+      throw error;
+    }
+
+    throw new HttpException(
+      new APIMessage('Invalid Credentials!', APIMessageTypes.ERROR),
+      HttpStatus.UNAUTHORIZED,
+    );
+  } catch (err) {
+    throw err;
   }
-  
+}
+
 
   async getUserProfile(id: string): Promise<User> {
     try {
