@@ -33,7 +33,7 @@ import { RequestDto } from './request.dto';
 import moment = require('moment-timezone');
 import { getCustomerPlanDetails } from 'src/subscription/subscription.utils';
 import { sendTemplateEmail } from 'src/util/sendMail';
-
+import { User2Dto } from '../users/users.dto'; // adjust path as needed
 @Injectable()
 export class RequestFactory extends BaseFactory {
   constructor(
@@ -186,8 +186,11 @@ async getAllRequests(params: any, user: User): Promise<PaginatedData> {
     const sevenDaysAgo = moment().subtract(7, 'days');
 
     requests = requests.sort((a, b) => {
-      const aSub = a.requesterOwner?.subscription?.type;
-      const bSub = b.requesterOwner?.subscription?.type;
+      const aUser = new User2Dto(a.requesterOwner);
+      const bUser = new User2Dto(b.requesterOwner);
+
+      const aSub = aUser.subscription?.type;
+      const bSub = bUser.subscription?.type;
 
       const aIsPremium =
         (aSub === 'SIMPLIFY' || aSub === 'WHITE_GLOVE') &&

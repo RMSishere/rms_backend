@@ -2,6 +2,35 @@ import { BusinessProfile, NotificationSubscription } from 'src/lib';
 import { Device } from 'src/util/pushNotification';
 import { BaseDto } from '../lib/base.dto';
 import { User } from '../lib/user';
+export class SubscriptionDto {
+  subscriptionId?: string;
+  customerId?: string;
+  type?: string;
+  billingType?: string;
+  status?: string;
+  startedAt?: Date;
+  expiresAt?: Date;
+  jobRequestCountThisMonth?: number;
+  pricingRequestsUsed?: number;
+  customVideosUsed?: number;
+  pitchReviewsUsed?: number;
+  lastReset?: Date;
+
+  constructor(subscription: any = {}) {
+    this.subscriptionId = subscription.subscriptionId;
+    this.customerId = subscription.customerId;
+    this.type = subscription.type;
+    this.billingType = subscription.billingType;
+    this.status = subscription.status;
+    this.startedAt = subscription.startedAt;
+    this.expiresAt = subscription.expiresAt;
+    this.jobRequestCountThisMonth = subscription.jobRequestCountThisMonth;
+    this.pricingRequestsUsed = subscription.pricingRequestsUsed;
+    this.customVideosUsed = subscription.customVideosUsed;
+    this.pitchReviewsUsed = subscription.pitchReviewsUsed;
+    this.lastReset = subscription.lastReset;
+  }
+}
 
 export class UserDto extends BaseDto implements User {
   constructor(user: User) {
@@ -65,4 +94,14 @@ export class UserDto extends BaseDto implements User {
   dob: Date;
     index?: number; // <-- Add this optional field
 
+}
+export class User2Dto extends UserDto {
+  constructor(user: User) {
+    super(user);
+    this.subscription = user.subscription
+      ? new SubscriptionDto(user.subscription)
+      : undefined;
+  }
+
+  subscription?: SubscriptionDto;
 }
