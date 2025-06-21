@@ -131,75 +131,87 @@ export class RequestFactory extends BaseFactory {
   }
 }
 
+async getAllRequests(params: any, user: User): Promise<PaginatedData> {
+  const skip = parseInt(params.skip) || 0;
+  const filter: any = { isActive: true, status: REQUEST_STATUS.INIT };
 
-  async getAllRequests(params: any, user: User): Promise<PaginatedData> {
-    const skip = parseInt(params.skip) || 0;
-    const filter = { isActive: true, status: REQUEST_STATUS.INIT };
+  try {
+    if (params.requestType) {
+      filter['requestType'] = { $in: params.requestType.split(',') };
+    }
 
-    try {
-      if (params.requestType) {
-        filter['requestType'] = { $in: params.requestType.split(',') };
-      }
-
-      if (params.status) {
-        const statusList = params.status.split(',');
-        if (statusList.includes('new')) {
-          filter['createdAt'] = {
-            $gte: moment()
-              .subtract(1, 'month')
-              .toISOString(),
-          };
-        }
-
-        if (statusList.includes('interestedAffiliates')) {
-          filter['leads'] = { $exists: true, $ne: [] }; // where leads array is not empty
-        }
-      }
-
-      if (params.onDate) {
+    if (params.status) {
+      const statusList = params.status.split(',');
+      if (statusList.includes('new')) {
         filter['createdAt'] = {
-          $gte: moment(params.onDate, 'YYYY-MM-DD').toISOString(),
-          $lt: moment(params.onDate, 'YYYY-MM-DD')
-            .add(1, 'day')
-            .toISOString(),
+          $gte: moment().subtract(1, 'month').toISOString(),
         };
       }
 
-      if (user.role === USER_ROLES.CLIENT) {
-        filter['requesterOwner'] = user._id;
-      } else if (user.role === USER_ROLES.AFFILIATE) {
-        const affiliate = await this.userFactory.getApprovedAffiliate({
-          _id: user,
-        });
-        if (affiliate && affiliate.businessProfile.areaServices.length) {
-          filter['zip'] = { $in: affiliate.businessProfile.nearByZipCodes };
-        } else {
-          return { result: [] };
-        }
-      } else if (user.role === USER_ROLES.ADMIN) {
-        // do nothing
-      } else {
-        throw new ForbiddenException();
+      if (statusList.includes('interestedAffiliates')) {
+        filter['leads'] = { $exists: true, $ne: [] };
       }
-
-      const count = await this.requestModel.countDocuments(filter);
-
-      const requests = await this.requestModel
-        .find(filter)
-        .skip(skip)
-        .limit(paginationLimit)
-        .populate('requesterOwner')
-        .sort({ createdAt: 'desc' });
-
-      const result = requests.map(res => new RequestDto(res));
-
-      const res = { result, count, skip };
-
-      return res;
-    } catch (error) {
-      throw error;
     }
+
+    if (params.onDate) {
+      filter['createdAt'] = {
+        $gte: moment(params.onDate, 'YYYY-MM-DD').toISOString(),
+        $lt: moment(params.onDate, 'YYYY-MM-DD').add(1, 'day').toISOString(),
+      };
+    }
+
+    if (user.role === USER_ROLES.CLIENT) {
+      filter['requesterOwner'] = user._id;
+    } else if (user.role === USER_ROLES.AFFILIATE) {
+      const affiliate = await this.userFactory.getApprovedAffiliate({
+        _id: user,
+      });
+      if (affiliate && affiliate.businessProfile.areaServices.length) {
+        filter['zip'] = { $in: affiliate.businessProfile.nearByZipCodes };
+      } else {
+        return { result: [] };
+      }
+    } else if (user.role === USER_ROLES.ADMIN) {
+      // do nothing
+    } else {
+      throw new ForbiddenException();
+    }
+
+    const count = await this.requestModel.countDocuments(filter);
+
+    let requests = await this.requestModel
+      .find(filter)
+      .populate('requesterOwner');
+
+    const sevenDaysAgo = moment().subtract(7, 'days');
+
+    requests = requests.sort((a, b) => {
+      const aSub = a.requesterOwner?.subscription?.type;
+      const bSub = b.requesterOwner?.subscription?.type;
+
+      const aIsPremium =
+        (aSub === 'SIMPLIFY' || aSub === 'WHITE_GLOVE') &&
+        moment(a.createdAt).isAfter(sevenDaysAgo);
+
+      const bIsPremium =
+        (bSub === 'SIMPLIFY' || bSub === 'WHITE_GLOVE') &&
+        moment(b.createdAt).isAfter(sevenDaysAgo);
+
+      if (aIsPremium && !bIsPremium) return -1;
+      if (!aIsPremium && bIsPremium) return 1;
+
+      return moment(b.createdAt).valueOf() - moment(a.createdAt).valueOf();
+    });
+
+    const paginated = requests.slice(skip, skip + paginationLimit);
+    const result = paginated.map(res => new RequestDto(res));
+
+    return { result, count, skip };
+  } catch (error) {
+    throw error;
   }
+}
+
 
   async getAllJobs(params: any, user: User): Promise<PaginatedData> {
     try {
