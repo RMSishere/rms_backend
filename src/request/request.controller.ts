@@ -133,10 +133,11 @@ export class RequestController {
     return this.requestFactory.getAllJobs(params, req.user);
   }
 
-  @Get(':id')
-  async getRequestById(@Param('id') id: string) {
-    return this.requestFactory.getRequestById(id);
-  }
+@Get(':id')
+async getRequestById(@Param('id') id: string, @Req() req) {
+  return this.requestFactory.getRequestById2(id, req.user);
+}
+
 
   @Put(':id')
   async updateRequest(

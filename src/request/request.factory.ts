@@ -586,6 +586,57 @@ async getAllRequests(params: any, user: User): Promise<PaginatedData> {
       throw err;
     }
   }
+ async getRequestById2(id: string, viewer: User): Promise<Request> {
+  try {
+    const requestDoc = await this.requestModel.findOne({
+      id: id,
+      isActive: true,
+    })
+    .populate('requesterOwner') // ensure we can notify the job owner
+    .populate('hiredAffiliate')
+    .populate('leads.affiliate');
+
+    if (!requestDoc) {
+      throw new Error('Request not found');
+    }
+
+    // Check if viewer is an affiliate and top-rated
+    const isAffiliate = viewer?.role === USER_ROLES.AFFILIATE;
+    const rating = viewer?.businessProfile?.rating;
+    const isTopRated = isAffiliate && rating >= 4.8;
+
+    if (isTopRated) {
+      const requester = requestDoc.requesterOwner;
+
+      await this.notificationfactory.sendNotification(
+        requester,
+        {
+          title: 'Top-Rated Affiliate Viewed Your Job',
+          type: NOTIFICATION_TYPES.JOB_STATUS_UPDATES.type,
+        },
+        {
+          inApp: {
+            message: {
+              text: `A top-rated affiliate (${viewer.firstName} ${viewer.lastName}) viewed your job.`,
+            },
+          },
+          email: {
+            template: MAIL_TEMPLATES.NEW_MESSAGE, // Use appropriate template if available
+            locals: {
+              subject: 'A top-rated affiliate viewed your job',
+              body: `A top-rated affiliate (${viewer.firstName} ${viewer.lastName}) just viewed your job.`,
+            },
+          },
+        }
+      );
+    }
+
+    return new RequestDto(requestDoc);
+  } catch (err) {
+    throw err;
+  }
+}
+
 
   async updateRequest(id: string, data: Request, user: User): Promise<Request> {
     try {
