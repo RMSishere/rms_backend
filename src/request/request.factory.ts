@@ -588,6 +588,7 @@ async getAllRequests(params: any, user: User): Promise<PaginatedData> {
   }
  async getRequestById2(id: string, viewer: User): Promise<Request> {
   try {
+    console.log("here");
     const requestDoc = await this.requestModel.findOne({
       id: id,
       isActive: true,

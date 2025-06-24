@@ -135,6 +135,7 @@ export class RequestController {
 
 @Get(':id')
 async getRequestById(@Param('id') id: string, @Req() req) {
+  console.log(id,req.user,'//////////////');
   return this.requestFactory.getRequestById2(id, req.user);
 }
 
