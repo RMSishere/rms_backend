@@ -132,6 +132,9 @@ export class RequestFactory extends BaseFactory {
 }
 
 async getAllRequests(params: any, user: User): Promise<PaginatedData> {
+  console.log("Params:", params);
+  console.log("Current User:", user);
+
   const skip = parseInt(params.skip) || 0;
   const filter: any = { isActive: true, status: REQUEST_STATUS.INIT };
 
@@ -171,9 +174,7 @@ async getAllRequests(params: any, user: User): Promise<PaginatedData> {
       } else {
         return { result: [] };
       }
-    } else if (user.role === USER_ROLES.ADMIN) {
-      // do nothing
-    } else {
+    } else if (user.role !== USER_ROLES.ADMIN) {
       throw new ForbiddenException();
     }
 
@@ -184,6 +185,15 @@ async getAllRequests(params: any, user: User): Promise<PaginatedData> {
       .populate('requesterOwner');
 
     const sevenDaysAgo = moment().subtract(7, 'days');
+
+    // Filter out requests with null requesterOwner
+    requests = requests.filter((req, idx) => {
+      if (!req.requesterOwner) {
+        console.warn(`⛔ Skipping request with null requesterOwner. Index: ${idx}, ID: ${req._id}`);
+        return false;
+      }
+      return true;
+    });
 
     requests = requests.sort((a, b) => {
       const aUser = new User2Dto(a.requesterOwner);
@@ -211,9 +221,12 @@ async getAllRequests(params: any, user: User): Promise<PaginatedData> {
 
     return { result, count, skip };
   } catch (error) {
+    console.error('🔥 Error in getAllRequests:', error);
     throw error;
   }
 }
+
+
 
 
   async getAllJobs(params: any, user: User): Promise<PaginatedData> {
