@@ -1,3 +1,5 @@
+import { Base } from './base';
+
 export class BaseDto implements Base {
     constructor(base?: Base | null) {
         if (base) {
