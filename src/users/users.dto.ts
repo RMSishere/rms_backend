@@ -33,7 +33,7 @@ export class SubscriptionDto {
 }
 
 export class UserDto extends BaseDto implements User {
-  constructor(user: User) {
+  constructor(user?: User) {
     super(user);
     this.firstName = user.firstName;
     this.lastName = user.lastName;
@@ -96,7 +96,7 @@ export class UserDto extends BaseDto implements User {
 
 }
 export class User2Dto extends UserDto {
-  constructor(user: User) {
+  constructor(user?: User) {
     super(user);
     this.subscription = user.subscription
       ? new SubscriptionDto(user.subscription)
