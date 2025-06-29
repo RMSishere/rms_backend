@@ -119,11 +119,11 @@ export class RequestFactory extends BaseFactory {
         },
       }).catch(() => null);
 
-      // ✅ Send to whiteglove email if user has WHITE_GLOVE plan
-  await sendTemplateEmail('whiteglove@runmysale.com', MAIL_TEMPLATES.NEW_REQUEST, {
-  title: `White Glove Request - ${requestLabel}`,
-  description: `A new White Glove request was submitted in zip code ${request.zip} by ${user.firstName} ${user.lastName}.`,
-});
+//       // ✅ Send to whiteglove email if user has WHITE_GLOVE plan
+//   await sendTemplateEmail('whiteglove@runmysale.com', MAIL_TEMPLATES.NEW_REQUEST, {
+//   title: `White Glove Request - ${requestLabel}`,
+//   description: `A new White Glove request was submitted in zip code ${request.zip} by ${user.firstName} ${user.lastName}.`,
+// });
     }
 
     return request;

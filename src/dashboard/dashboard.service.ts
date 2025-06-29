@@ -70,42 +70,56 @@ export class DashboardService extends BaseFactory {
     }
   }
 
-  async getZipCodesWithNumberOfJobs(params: any): Promise<any> {
-    try {
-      const skip = parseInt(params.skip) || 0;
-      const sort = JSON.parse(params.sort || null) || { jobsCount: -1 };
+async getZipCodesWithNumberOfJobs(params: any): Promise<any> {
+  try {
+    const skip = parseInt(params.skip) || 0;
 
-      const filter = { status: { $ne: REQUEST_STATUS.INIT } };
+    let sort: Record<string, number> = { jobsCount: -1 };
 
-      const [{ count }] = await this.requestModel.aggregate([
-        { $match: filter },
-        {
-          $group: {
-            _id: '$zip',
-          },
-        },
-        { $count: 'count' },
-      ]);
-
-      const result = await this.requestModel.aggregate([
-        { $match: filter },
-        {
-          $group: {
-            _id: '$zip',
-            jobsCount: { $sum: 1 },
-          },
-        },
-        { $sort: sort },
-        { $skip: skip },
-        { $limit: paginationLimit },
-        { $project: { zipCode: '$_id', jobsCount: 1 } },
-      ]);
-
-      return { count, result, skip };
-    } catch (error) {
-      throw error;
+    if (params.sort) {
+      try {
+        const parsed = typeof params.sort === 'string' ? JSON.parse(params.sort) : params.sort;
+        sort = Object.fromEntries(
+          Object.entries(parsed).map(([key, value]) => [key, Number(value)])
+        );
+      } catch (e) {
+        // Invalid JSON, fallback to default sort
+        sort = { jobsCount: -1 };
+      }
     }
+
+    const filter = { status: { $ne: REQUEST_STATUS.INIT } };
+
+    const [{ count } = { count: 0 }] = await this.requestModel.aggregate([
+      { $match: filter },
+      {
+        $group: { _id: '$zip' }
+      },
+      { $count: 'count' },
+    ]);
+
+    const result = await this.requestModel.aggregate([
+      { $match: filter },
+      {
+        $group: {
+          _id: '$zip',
+          jobsCount: { $sum: 1 },
+        },
+      },
+      { $sort: sort },
+      { $skip: skip },
+      { $limit: paginationLimit },
+      { $project: { zipCode: '$_id', jobsCount: 1 } },
+    ]);
+
+    return { count, result, skip };
+  } catch (error) {
+    throw error;
   }
+}
+
+
+
 
   async getSaleCategoryStats(params: any): Promise<any> {
     try {
