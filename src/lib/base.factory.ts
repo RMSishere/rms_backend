@@ -22,7 +22,8 @@ export class BaseFactory {
         { new: true, upsert: true, setDefaultsOnInsert: true }
       );
       console.log(nextNumber, 'next number');
-      const nextNumberObj = nextNumber ? nextNumber.toObject() : null;
+      const nextNumberObj = nextNumber ? nextNumber : null;
+      console.log(nextNumberObj,'////////////////////');
       return nextNumberObj.counter.toString();
     } catch (err) {
       console.error(err);

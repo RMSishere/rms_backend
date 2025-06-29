@@ -55,8 +55,9 @@ export class RequestFactory extends BaseFactory {
     data.id = await this.generateSequentialId('request');
     data.requesterOwner = user;
     data.createdBy = this.getCreatedBy(user);
-    
-    const userdata = await this.userModel.findById(user.id);
+    console.log(user,'data');
+    const userdata = await this.userModel.findById(user._id);
+    console.log(userdata,'/userererer')
     const plan = getCustomerPlanDetails(userdata.subscription?.type);
 
     if (userdata.subscription.jobRequestCountThisMonth >= plan.jobRequestLimit) {
