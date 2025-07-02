@@ -88,6 +88,14 @@ const commonExcludeRoutes = [
     path: `${GLOBAL_PREFIX}/auth/helpMessage`,
     method: RequestMethod.POST,
   },
+   {
+    path: `${GLOBAL_PREFIX}/subscription/use-job-credit`,
+    method: RequestMethod.PUT,
+  },
+   {
+    path: `${GLOBAL_PREFIX}/subscription/status`,
+    method: RequestMethod.POST,
+  },
   {
     path: `${GLOBAL_PREFIX}/subscription/subscribe`,
     method: RequestMethod.POST,

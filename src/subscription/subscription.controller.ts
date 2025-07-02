@@ -28,6 +28,8 @@ import { RolesGuard } from 'src/common/guards/roles.guard';
 import Stripe from 'stripe';
 import { Types } from 'mongoose';
 import * as mongoose from 'mongoose';
+import { UserDto } from 'src/users/users.dto';
+import { APIMessage } from 'src/common/dto';
 const stripe = new Stripe(
   'REMOVED_STRIPE_TEST_KEY',
   { apiVersion: '2025-04-30.basil' }
@@ -36,6 +38,7 @@ const stripe = new Stripe(
 const STRIPE_WEBHOOK_SECRET = 'whsec_eFeLRLlhDR3zZ3PGzuzbGZ9rptTeBwY0'; // Set this from your Stripe dashboard
 
 interface Subscription {
+  jobRequestLimit: any;
   type: string;
   billingType: 'MONTHLY' | 'YEARLY';
   status: 'ACTIVE' | 'INACTIVE' | 'CANCELED';
@@ -467,24 +470,62 @@ console.log("app",appFee);
   }
   
 
-  // @Put('use-job-credit')
 @Put('use-job-credit')
 async useCredit(@Req() req) {
-  const user = req.user;
-  const userdata = await this.userModel.findById(req.user._id);
-
-  // Get the user's current subscription plan
-  const plan = getCustomerPlanDetails(user.subscription?.type);
-  if (!userdata.subscription || !plan) return { error: 'No active plan' };
-
-  // Check the current count of job requests for this month
-  const jobRequestCount = userdata.subscription.jobRequestCountThisMonth || 0;
-  if (jobRequestCount >= plan.jobRequestLimit) {
-    return { error: 'Job request limit exceeded for this month' };
+ const user = await this.userModel
+      .findOne({ id: req.user.id })
+      .select('subscription')
+      .lean();
+  
+    if (!user?.subscription) {
+      return {};
+    }
+  
+    const subscription = user.subscription;
+    let planName = null;
+  
+    // If there's a valid Stripe subscriptionId, fetch its details
+    if (subscription.subscriptionId) {
+      try {
+        const stripeSub = await stripe.subscriptions.retrieve(subscription.subscriptionId, {
+          expand: ['items.data.price.product'],
+        });
+  
+        planName = (stripeSub.items.data[0]?.price?.product as Stripe.Product)?.name || null;
+      } catch (err) {
+        console.error('Failed to fetch subscription from Stripe:', err.message);
+      }
+    }
+  
+    const data = {
+      type: subscription.type,
+      billingType: subscription.billingType,
+      status: subscription.status,
+      jobRequestLimit:subscription.jobRequestLimit,
+      startedAt: subscription.startedAt,
+      expiresAt: subscription.expiresAt,
+      jobRequestCountThisMonth: subscription.jobRequestCountThisMonth,
+      pricingRequestsUsed: subscription.pricingRequestsUsed,
+      customVideosUsed: subscription.customVideosUsed,
+      pitchReviewsUsed: subscription.pitchReviewsUsed,
+      subscriptionId: subscription.subscriptionId,
+      planName,
+    };
+  if (!data.type) {
+    return { error: 'No active plan' };
   }
 
-  // Increment job request count for the user
+  // Get job request count
+  const jobRequestCount = data.jobRequestCountThisMonth || 0;
+
+if (data.type === 'STARTER' && jobRequestCount >= data.jobRequestLimit) {
+  return { error: 'Job request limit exceeded for this month' };
+}
+
+
+  // Increment job request count
   const newCount = jobRequestCount + 1;
+
   await this.userModel.updateOne(
     { id: user.id },
     { $set: { 'subscription.jobRequestCountThisMonth': newCount } }
@@ -492,6 +533,7 @@ async useCredit(@Req() req) {
 
   return { success: true };
 }
+
 
 @Get('eligibility-check')
 async checkEligibility(@Req() req, @Body('type') jobType: 'SELL' | 'REMOVE' | 'OTHER') {
