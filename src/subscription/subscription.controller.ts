@@ -467,31 +467,39 @@ console.log("app",appFee);
   }
   
 
+  // @Put('use-job-credit')
 @Put('use-job-credit')
 async useCredit(@Req() req) {
+  const user = req.user;
+  console.log(user, 'usererererererer');
 
-  const user = req.user.id;
-const userdata = await this.userModel.findById(req.user.id).select('+subscription');
+  const userdata = await this.userModel.findById(user._id);
+  console.log(userdata, '/userererer');
 
-  // Get the user's current subscription plan
-  const plan = getCustomerPlanDetails(user.subscription);
-  if (!userdata.subscription || !plan) return { error: 'No active plan' };
+  const plan = getCustomerPlanDetails(userdata.subscription?.type);
+  console.log(plan, 'userplan');
+
+  if (!userdata.subscription || !plan) {
+    return { error: 'No active plan' };
+  }
 
   // Check the current count of job requests for this month
   const jobRequestCount = userdata.subscription.jobRequestCountThisMonth || 0;
-  // if (jobRequestCount >= plan.jobRequestLimit) {
-  //   return { error: 'Job request limit exceeded for this month' };
-  // }
+  if (jobRequestCount >= plan.jobRequestLimit) {
+    return { error: 'Job request limit exceeded for this month' };
+  }
 
   // Increment job request count for the user
   const newCount = jobRequestCount + 1;
   await this.userModel.updateOne(
-    { id: user.id },
+    { _id: user._id }, // ✅ Fixed line
     { $set: { 'subscription.jobRequestCountThisMonth': newCount } }
   );
 
   return { success: true };
 }
+
+
 
 @Get('eligibility-check')
 async checkEligibility(@Req() req, @Body('type') jobType: 'SELL' | 'REMOVE' | 'OTHER') {
