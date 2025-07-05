@@ -93,11 +93,7 @@ async getAllIncomingMessages(
       }
 
       chats = await this.chatModel.aggregate([
-        {
-          $match: {
-            receiver: receiverObjectId,
-          },
-        },
+        { $match: { receiver: receiverObjectId } },
         {
           $lookup: {
             from: 'requests',
@@ -106,48 +102,69 @@ async getAllIncomingMessages(
             as: 'requestData',
           },
         },
-        {
-          $match: secondFilter,
-        },
-        {
-          $sort: { createdAt: -1 },
-        },
+        { $match: secondFilter },
+        { $sort: { createdAt: -1 } },
         {
           $group: {
             _id: '$sender',
-            latestMessage: { $first: '$$ROOT' },
+            createdAt: { $first: '$createdAt' }, // latest createdAt
           },
-        },
-        {
-          $replaceRoot: { newRoot: '$latestMessage' },
         },
         {
           $lookup: {
-            from: 'users',
-            localField: 'sender',
-            foreignField: '_id',
-            as: 'senderData',
+            from: 'chat',
+            let: { senderId: '$_id', latestTime: '$createdAt' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$sender', '$$senderId'] },
+                      { $eq: ['$createdAt', '$$latestTime'] },
+                    ],
+                  },
+                },
+              },
+              {
+                $lookup: {
+                  from: 'users',
+                  localField: 'sender',
+                  foreignField: '_id',
+                  as: 'senderData',
+                },
+              },
+              {
+                $lookup: {
+                  from: 'requests',
+                  localField: 'messageFor',
+                  foreignField: '_id',
+                  as: 'requestData',
+                },
+              },
+              {
+                $unwind: {
+                  path: '$senderData',
+                  preserveNullAndEmptyArrays: true,
+                },
+              },
+            ],
+            as: 'latestMessageData',
           },
         },
-        {
-          $unwind: {
-            path: '$senderData',
-            preserveNullAndEmptyArrays: true,
-          },
-        },
-        {
-          $sort: { createdAt: -1 },
-        },
+        { $unwind: '$latestMessageData' },
+        { $replaceRoot: { newRoot: '$latestMessageData' } },
+        { $sort: { createdAt: -1 } },
         { $skip: skip },
         { $limit: paginationLimit },
       ]);
 
-      // Count of distinct senders with receiver match
+      // Count of distinct senders
       const distinctSenders = await this.chatModel.distinct('sender', {
-        receiver: me._id as any, // ✅ Bypass type check
+        receiver: me._id as any,
       });
       count = distinctSenders.length;
 
+      // Count of unread messages by distinct senders
       const unreadSenders = await this.chatModel.distinct('sender', {
         receiver: me._id as any,
         read: null,
@@ -160,7 +177,7 @@ async getAllIncomingMessages(
         return dt;
       });
     } else {
-      const chatFilter = { receiver: me._id as any }; // ✅ Cast to skip type check
+      const chatFilter = { receiver: me._id as any };
 
       count = await this.chatModel.countDocuments(chatFilter);
       unreadCount = await this.chatModel.countDocuments({
@@ -188,6 +205,7 @@ async getAllIncomingMessages(
     throw err;
   }
 }
+
 
 
 
