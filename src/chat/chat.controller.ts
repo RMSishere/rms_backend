@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Query, Req } from "@nestjs/common";
+import { Controller, Get, Query, Req } from "@nestjs/common";
 import { ChatFactory } from './chat.factory';
 
 @Controller('chat')
@@ -13,7 +13,7 @@ export class ChatController {
         return this.chatFactory.getMessages(params, req.user);
     }
 
-    @Post('/incoming')
+    @Get('/incoming')
     async getAllIncomingMessages(
         @Query() query: object,
         @Query('skip') skip: string,
