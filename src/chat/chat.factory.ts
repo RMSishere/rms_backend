@@ -70,116 +70,130 @@ export class ChatFactory extends BaseFactory {
       throw err;
     }
   }
+async getAllIncomingMessages(
+  skip: number,
+  query: any,
+  me: User,
+): Promise<PaginatedData> {
+  try {
+    const customerTypes: string[] = query.customerType?.split(',');
+    let chats = [];
+    let count = 0;
+    let unreadCount = 0;
 
-  async getAllIncomingMessages(
-    skip: number,
-    query: any,
-    me: User,
-  ): Promise<PaginatedData> {
-    try {
-      const chatFilter = { receiver: me };
-      const customerTypes: string[] = query.customerType?.split(',');
-      let chats = [];
-      let count = 0;
-      let unreadCount = 0;
+    const receiverObjectId = new mongoose.Types.ObjectId(me._id);
+    const secondFilter: any = {};
 
-      if (customerTypes && customerTypes.length === 1) {
-        const secondFilter: any = {};
-
-        // note: must use aggreagation for querying referenced documents
-
-        if (customerTypes.includes('active')) {
-          secondFilter['requests.hiredAffiliate'] = me;
-        }
-        if (customerTypes.includes('potential')) {
-          secondFilter['requests.hiredAffiliate'] = null;
-        }
-        chats = await this.chatModel.aggregate([
-          {
-            $match: { receiver: new mongoose.Types.ObjectId(me._id) },
-          },
-          {
-            $lookup: {
-              from: 'users',
-              localField: 'sender',
-              foreignField: '_id',
-              as: 'senderData',
-            },
-          },
-          {
-            $lookup: {
-              from: 'requests',
-              localField: 'messageFor',
-              foreignField: '_id',
-              as: 'requestData',
-            },
-          },
-          { $match: secondFilter },
-          { $skip: skip },
-          { $limit: paginationLimit },
-          { $sort: { createdAt: -1 } },
-        ]);
-
-        [{ count = 0 } = {}] = await this.chatModel.aggregate([
-          {
-            $match: { receiver: new mongoose.Types.ObjectId(me._id) },
-          },
-          {
-            $lookup: {
-              from: 'requests',
-              localField: 'messageFor',
-              foreignField: '_id',
-              as: 'requestData',
-            },
-          },
-          { $match: secondFilter },
-          { $count: 'count' },
-        ]);
-
-        [{ count: unreadCount = 0 } = {}] = await this.chatModel.aggregate([
-          {
-            $match: { receiver: new mongoose.Types.ObjectId(me._id) },
-          },
-          {
-            $lookup: {
-              from: 'requests',
-              localField: 'messageFor',
-              foreignField: '_id',
-              as: 'requestData',
-            },
-          },
-          { $match: { ...secondFilter, read: null } },
-          { $count: 'count' },
-        ]);
-
-        chats = chats.map(dt => {
-          dt.sender = dt.senderData?.[0] || {};
-          dt.messageFor = dt.requestData?.[0] || {};
-          return dt;
-        });
-      } else {
-        count = await this.chatModel.countDocuments(chatFilter);
-        unreadCount = await this.chatModel.countDocuments({
-          ...chatFilter,
-          read: null,
-        });
-
-        chats = await this.chatModel
-          .find(chatFilter)
-          .populate('sender')
-          .populate('messageFor')
-          .skip(skip)
-          .limit(paginationLimit)
-          .sort({ createdAt: 'desc' });
+    if (customerTypes && customerTypes.length === 1) {
+      if (customerTypes.includes('active')) {
+        secondFilter['requests.hiredAffiliate'] = receiverObjectId;
+      }
+      if (customerTypes.includes('potential')) {
+        secondFilter['requests.hiredAffiliate'] = null;
       }
 
-      const result = chats.map(res => new ChatDto(res));
+      chats = await this.chatModel.aggregate([
+        {
+          $match: {
+            receiver: receiverObjectId,
+          },
+        },
+        {
+          $lookup: {
+            from: 'requests',
+            localField: 'messageFor',
+            foreignField: '_id',
+            as: 'requestData',
+          },
+        },
+        {
+          $match: secondFilter,
+        },
+        {
+          $sort: { createdAt: -1 },
+        },
+        {
+          $group: {
+            _id: '$sender',
+            latestMessage: { $first: '$$ROOT' },
+          },
+        },
+        {
+          $replaceRoot: { newRoot: '$latestMessage' },
+        },
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'sender',
+            foreignField: '_id',
+            as: 'senderData',
+          },
+        },
+        {
+          $unwind: {
+            path: '$senderData',
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+        {
+          $sort: { createdAt: -1 },
+        },
+        { $skip: skip },
+        { $limit: paginationLimit },
+      ]);
 
-      const finalData = { result, count, unreadCount, skip };
+      // Count of distinct senders with receiver match
+      const distinctSenders = await this.chatModel.distinct('sender', {
+        receiver: me._id as any, // ✅ Bypass type check
+      });
+      count = distinctSenders.length;
 
-      return finalData;
-    } catch (err) {}
+      const unreadSenders = await this.chatModel.distinct('sender', {
+        receiver: me._id as any,
+        read: null,
+      });
+      unreadCount = unreadSenders.length;
+
+      chats = chats.map(dt => {
+        dt.sender = dt.senderData || {};
+        dt.messageFor = dt.requestData?.[0] || {};
+        return dt;
+      });
+    } else {
+      const chatFilter = { receiver: me._id as any }; // ✅ Cast to skip type check
+
+      count = await this.chatModel.countDocuments(chatFilter);
+      unreadCount = await this.chatModel.countDocuments({
+        ...chatFilter,
+        read: null,
+      });
+
+      chats = await this.chatModel
+        .find(chatFilter)
+        .populate('sender')
+        .populate('messageFor')
+        .skip(skip)
+        .limit(paginationLimit)
+        .sort({ createdAt: 'desc' });
+    }
+
+    const result = chats.map(res => new ChatDto(res));
+    return {
+      result,
+      count,
+      unreadCount,
+      skip,
+    };
+  } catch (err) {
+    throw err;
   }
+}
+
+
+
+
+
+
 
   async newMessage(data: Chat): Promise<Chat> {
     try {

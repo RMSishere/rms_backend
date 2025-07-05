@@ -97,6 +97,10 @@ const commonExcludeRoutes = [
     path: `${GLOBAL_PREFIX}/subscription/subscribe`,
     method: RequestMethod.POST,
   },
+  {
+    path: `${GLOBAL_PREFIX}/chat/incoming`,
+    method: RequestMethod.POST,
+  },
   // {
   //   path: `${GLOBAL_PREFIX}/auth/businessProfile`,
   //   method: RequestMethod.POST,
