@@ -127,7 +127,7 @@ async wpRegister(@Body() data: UserDto) {
 
   @Put('socialLogin')
   async updateSocialLoginData(@Body() data, @Req() req) {
-    return this.userFactory.updateSocialLoginData(data, req.user);
+    // return this.userFactory.updateSocialLoginData(data, req.user);
   }
 
   @Put('block')
@@ -272,12 +272,6 @@ async addHelpMessage(@Req() req: Request, @Body() body: any) {
     }
   }
   
-  
-  
-  
-  
-  
-  
   // @Roles(USER_ROLES.ADMIN)
   @Get('affiliate')
   async getAllAffiliates(@Query() params: any) {
@@ -289,6 +283,10 @@ async addHelpMessage(@Req() req: Request, @Body() body: any) {
   async approveBusinessProfile(@Param('id') id: string, @Req() req) {
     return this.userFactory.approveBusinessProfileByIdOnly(id);
   }
+@Put('affiliate/approveByEmail')
+async approveBusinessProfileByEmail(@Body('email') email: string) {
+  return this.userFactory.approveBusinessProfileByEmailOnly(email);
+}
 
   @Roles(USER_ROLES.ADMIN)
   @Get('user/:id')

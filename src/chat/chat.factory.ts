@@ -195,6 +195,7 @@ async getAllIncomingMessages(
     }
 
     const result = chats.map(res => new ChatDto(res));
+    
     return {
       result,
       count,
@@ -205,6 +206,140 @@ async getAllIncomingMessages(
     throw err;
   }
 }
+
+async getAllIncomingMessages2(
+  skip: number,
+  query: any,
+  me: { _id: string },
+): Promise<PaginatedData> {
+  try {
+    const customerTypes: string[] = query.customerType?.split(',');
+    let chats = [];
+    let count = 0;
+    let unreadCount = 0;
+
+    const receiverObjectId = new mongoose.Types.ObjectId(me._id);
+
+    if (customerTypes && customerTypes.length === 1) {
+      chats = await this.chatModel.aggregate([
+        { $match: { receiver: receiverObjectId } },
+        {
+          $lookup: {
+            from: 'requests',
+            localField: 'messageFor',
+            foreignField: '_id',
+            as: 'messageFor',
+          },
+        },
+        {
+          $unwind: {
+            path: '$messageFor',
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+        ...(customerTypes.includes('active') ? [{
+          $match: {
+            $expr: {
+              $eq: ['$messageFor.hiredAffiliate', receiverObjectId],
+            },
+          },
+        }] : []),
+        ...(customerTypes.includes('potential') ? [{
+          $match: {
+            $or: [
+              { messageFor: null },
+              {
+                $and: [
+                  { 'messageFor.hiredAffiliate': { $exists: true } },
+                  { 'messageFor.hiredAffiliate': null }
+                ]
+              }
+            ]
+          }
+        }] : []),
+        { $sort: { createdAt: -1 } },
+        {
+          $group: {
+            _id: '$sender',
+            doc: { $first: '$$ROOT' },
+          },
+        },
+        {
+          $replaceRoot: { newRoot: '$doc' },
+        },
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'sender',
+            foreignField: '_id',
+            as: 'senderData',
+          },
+        },
+        {
+          $unwind: {
+            path: '$senderData',
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+        {
+          $addFields: {
+            sender: '$senderData',
+          },
+        },
+        {
+          $project: {
+            senderData: 0,
+          },
+        },
+        { $sort: { createdAt: -1 } },
+        { $skip: skip },
+        { $limit: paginationLimit },
+      ]);
+
+      const distinctSenders = await this.chatModel.distinct('sender', {
+        receiver: me._id as any,
+      });
+      count = distinctSenders.length;
+
+      const unreadSenders = await this.chatModel.distinct('sender', {
+        receiver: me._id as any,
+        read: null,
+      });
+      unreadCount = unreadSenders.length;
+    } else {
+      const chatFilter = { receiver: me._id as any };
+
+      count = await this.chatModel.countDocuments(chatFilter);
+      unreadCount = await this.chatModel.countDocuments({
+        ...chatFilter,
+        read: null,
+      });
+
+      chats = await this.chatModel
+        .find(chatFilter)
+        .populate('sender')
+        .populate('messageFor')
+        .skip(skip)
+        .limit(paginationLimit)
+        .sort({ createdAt: 'desc' });
+    }
+
+    const result = chats.map(res => new ChatDto(res));
+
+    return {
+      result,
+      count,
+      unreadCount,
+      skip,
+    };
+  } catch (err) {
+    throw err;
+  }
+}
+
+
+
+
 
 
 

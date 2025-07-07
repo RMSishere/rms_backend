@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Req } from "@nestjs/common";
+import { Controller, Get, Post, Query, Req } from "@nestjs/common";
 import { ChatFactory } from './chat.factory';
 
 @Controller('chat')
@@ -21,5 +21,15 @@ export class ChatController {
     ) {
         return this.chatFactory.getAllIncomingMessages(parseInt(skip), query, req.user);
     }
+    
+@Post('/incomingg')
+async getAllIncomingMessagess(
+    @Query() query: object,
+    @Query('skip') skip: string,
+    @Req() req
+) {
+    const userId = req.body.id;
+    return this.chatFactory.getAllIncomingMessages2(parseInt(skip), query, { _id: userId });
+}
 
 }

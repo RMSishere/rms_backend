@@ -821,6 +821,7 @@ async login(
     user: User,
   ): Promise<User | APIMessage> {
     try {
+      console.log("hello");
       delete dataToUpdate['role'];
       const sensitiveFields = ['password', 'isMobileVerfied', 'isEmailVerified'];
   
@@ -1392,7 +1393,35 @@ console.log(wpToken,'dsdsas');
   }
 }
 
-  
+  async approveBusinessProfileByEmailOnly(email: string): Promise<{ success: boolean; data?: UserDto; error?: string }> {
+  try {
+    const user = await this.usersModel.findOne({ email });
+
+    if (!user) {
+      return { success: false, error: 'User not found' };
+    }
+
+    const updatedUser = await this.usersModel.findOneAndUpdate(
+      { email },
+      {
+        $set: {
+          'businessProfile.isApproved': true,
+          'businessProfile.approvedDate': new Date(),
+        }
+      },
+      { new: true }
+    );
+
+    if (!updatedUser) {
+      return { success: false, error: 'Failed to update user in DB' };
+    }
+
+    return { success: true, data: new UserDto(updatedUser) };
+  } catch (err) {
+    return { success: false, error: err.message || 'An unexpected error occurred' };
+  }
+}
+
   
   async getAreaServiceAndNearByZipCodes(
     areaServices: Array<{ zipCode: string }>,
