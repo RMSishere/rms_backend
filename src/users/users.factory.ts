@@ -291,7 +291,7 @@ async addUser2(data: any): Promise<User | APIMessage> {
       serviceCoverageRadius: null,
       areaServices: [],
       nearByZipCodes: [],
-      isApproved: false,
+      isApproved: true,
       approvedDate: null,
       termsAccepted: false,
       allowMinimumPricing: data.allowMinimumPricing || false,
