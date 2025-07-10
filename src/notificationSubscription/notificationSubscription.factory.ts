@@ -35,28 +35,35 @@ export class NotificationSubscriptionFactory extends BaseFactory {
       throw err;
     }
   }
+async getAllNotificationSubscriptions(
+  params: any,
+  user: User,
+): Promise<NotificationSubscription[]> {
+  const filter = {
+    isActive: true,
+    ...(user.role !== USER_ROLES.ADMIN ? { forRoles: { $in: [user.role] } } : null),
+  };
 
-  async getAllNotificationSubscriptions(
-    params: any,
-    user: User,
-  ): Promise<NotificationSubscription[]> {
-    const filter = {
-      isActive: true,
-      ...(user.role !== USER_ROLES.ADMIN ? { forRoles: user.role } : null),
-    };
+  console.log('User Role:', user.role);
+  console.log('Filter being used to fetch subscriptions:', filter);
 
-    try {
-      const notificationSubscriptions = await this.notificationSubscriptionModel.find(
-        filter,
-      );
+  try {
+    const notificationSubscriptions = await this.notificationSubscriptionModel.find(
+      filter,
+    );
+    console.log('Fetched Notification Subscriptions:', notificationSubscriptions);
 
-      const result = notificationSubscriptions.map(
-        res => new NotificationSubscriptionDto(res),
-      );
+    const result = notificationSubscriptions.map(
+      res => new NotificationSubscriptionDto(res),
+    );
+    console.log('Mapped NotificationSubscriptionDto Result:', result);
 
-      return result;
-    } catch (error) {
-      throw error;
-    }
+    return result;
+  } catch (error) {
+    console.error('Error fetching notification subscriptions:', error);
+    throw error;
   }
+}
+
+
 }
