@@ -509,31 +509,33 @@ async addJobUpdate(
         const description = `Your ${serviceLabel} appointment has been scheduled for ${appointmentDate}.`;
 
         // ✅ Email via NotificationFactory
-        await this.notificationfactory.sendNotification(
-          requester,
-          NOTIFICATION_TYPES.JOB_STATUS_UPDATES,
-          {
-            inApp: {
-              message: {
-                requestId: requestId,
-                title,
-                description,
-                screen: 'JobUpdates',
-                screenParams: { id: requestId },
-              },
-            },
-            text: {
-              message: `${title}\n${description}`,
-            },
-            email: {
-              template: MAIL_TEMPLATES.NEW_MESSAGE,
-              locals: {
-                subject: title,
-                body: description,
-              },
-            },
+  await this.notificationfactory.sendNotification(
+  requester,
+  NOTIFICATION_TYPES.JOB_STATUS_UPDATES,
+  {
+    email: {
+      template: MAIL_TEMPLATES.NEW_MESSAGE,
+      locals: {
+        subject: title,
+        body: description,
+        message: {
+          sender: {
+            firstName: requester.firstName || 'Unknown',
+            lastName: requester.lastName || 'User',
           },
-        );
+          messageFor: {
+            id: requestId,
+          },
+        },
+        service: {
+          label: serviceLabel, // Ensure serviceLabel is defined from SERVICES
+        },
+      },
+    },
+  }
+);
+
+
 
         // ✅ SMS via Twilio
         if (requester.phoneNumber) {
