@@ -911,7 +911,33 @@ async login(
       throw err;
     }
   }
-  
+async autoVerifyPhoneNumber(phoneNumber: string): Promise<User | APIMessage> {
+  try {
+    // Find the user by phone number
+    const user = await this.usersModel.findOne({ phoneNumber, isActive: true }).exec();
+
+    if (!user) {
+      return new APIMessage('User with given phone number does not exist!', APIMessageTypes.ERROR);
+    }
+
+    // Update the isMobileVerified field to true
+    user.isMobileVerfied = true;
+
+    // Save the updated user data
+    const updatedUser = await user.save();
+
+    // Return updated user or any other response
+    const res = new UserDto(updatedUser);
+    res['token'] = await generateToken(updatedUser);
+    return res;
+
+  } catch (err) {
+    console.error('Error while auto-verifying phone number:', err);
+    throw new InternalServerErrorException('Failed to verify phone number');
+  }
+}
+
+
 
   async updateSocialLoginData(
     dataToUpdate: User | any,

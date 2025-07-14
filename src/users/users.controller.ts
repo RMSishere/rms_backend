@@ -119,6 +119,11 @@ async wpRegister(@Body() data: UserDto) {
   ) {
     return this.userFactory.login(email, password, role, device);
   }
+  @Post('auto-verify-phone')
+async autoVerifyPhoneNumber(@Body('phoneNumber') phoneNumber: string) {
+  return this.userFactory.autoVerifyPhoneNumber(phoneNumber);
+}
+
 
   @Put('update')
   async updateUserData(@Body() data, @Req() req) {
