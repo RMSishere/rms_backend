@@ -93,52 +93,96 @@ export class UserFactory extends BaseFactory {
   }
 
 
-  async addUser(data: User): Promise<User | APIMessage> {
-    try {
-      console.log('Raw input data:', data);
-      data.email = data.email.toLowerCase();
-  
-      if (data.role === USER_ROLES.ADMIN) {
-        console.log('Admin role detected – throwing error');
-        throw new InternalServerErrorException();
-      }
-  
-      if (!data.termsAccepted) {
-        console.log('Terms not accepted');
+async addUser(data: User): Promise<User | APIMessage> {
+  try {
+    console.log('Raw input data:', data);
+    data.email = data.email.toLowerCase();
+
+    if (data.role === USER_ROLES.ADMIN) {
+      console.log('Admin role detected – throwing error');
+      throw new InternalServerErrorException();
+    }
+
+    if (!data.termsAccepted) {
+      console.log('Terms not accepted');
+      return new APIMessage(
+        'Please accept terms and conditions!',
+        APIMessageTypes.ERROR,
+      );
+    }
+
+    if (data.email) {
+      const userExist = await this.checkUserExist({ email: data.email, role: data.role });
+      console.log('Email check result:', userExist);
+      if (userExist) {
         return new APIMessage(
-          'Please accept terms and conditions!',
+          'User with given email & role already exists!',
           APIMessageTypes.ERROR,
         );
       }
-  
-      if (data.email) {
-        const userExist = await this.checkUserExist({ email: data.email, role: data.role });
-        console.log('Email check result:', userExist);
-        if (userExist) {
-          return new APIMessage(
-            'User with given email & role already exists!',
-            APIMessageTypes.ERROR,
-          );
-        }
+    }
+
+    if (data.phoneNumber) {
+      const userExist = await this.checkUserExist({
+        phoneNumber: data.phoneNumber,
+        role: data.role,
+      });
+      console.log('Phone check result:', userExist);
+      if (userExist) {
+        return new APIMessage(
+          'User with given phone number & role already exists!',
+          APIMessageTypes.ERROR,
+        );
       }
-  
-      if (data.phoneNumber) {
-        const userExist = await this.checkUserExist({
-          phoneNumber: data.phoneNumber,
-          role: data.role,
-        });
-        console.log('Phone check result:', userExist);
-        if (userExist) {
-          return new APIMessage(
-            'User with given phone number & role already exists!',
-            APIMessageTypes.ERROR,
-          );
-        }
-      }
-  
-      const plainPassword = data.password; // Save original password for external API
-  
-      // Call external API first
+    }
+
+    const plainPassword = data.password; // Save original password for external API
+
+    // Proceed with local DB creation first
+    data['id'] = await this.generateSequentialId('users');
+    console.log('Generated user id:', data['id']);
+
+    data.createdBy = this.getCreatedBy(data);
+    data.password = await getEncryptedPassword(plainPassword);
+    data.passwordEncrypted = encrypt(plainPassword);
+    data['avatar'] = getDefaulAvatarUrl(data.firstName, data.lastName);
+
+    const newadata = await this.notificationSubscriptionFactory.getAllNotificationSubscriptions({}, data);
+    console.log('Generated notificationSubscriptions:', JSON.stringify(newadata, null, 2));
+
+    if (Array.isArray(newadata) && newadata.length > 0) {
+      const seen = new Set<string>();
+      const sanitized = newadata
+        .filter(sub => !!sub)
+        .map((sub, index) => {
+          if (!sub.id) sub.id = randomUUID();
+          if (!sub.title) sub.title = `user-${data.id}-title-${index + 1}`;
+          if (!sub.id || seen.has(sub.id)) return null;
+          seen.add(sub.id);
+          return sub;
+        })
+        .filter(Boolean);
+
+      console.log('Sanitized notificationSubscriptions count:', sanitized.length);
+      data.notificationSubscriptions = sanitized;
+    } else {
+      delete data.notificationSubscriptions;
+    }
+
+    console.log('Final user data before save:', JSON.stringify(data, null, 2));
+
+    const newUser = new this.usersModel(data);
+    const result = await newUser.save();
+    const res = new UserDto(result);
+
+    if (res.role === USER_ROLES.CLIENT) {
+      await this.sendWelcomeText(res);
+    }
+
+    res['token'] = await generateToken(result);
+
+    // ✅ Make external API call in background (non-blocking)
+    setImmediate(async () => {
       try {
         const affiliatePayload = {
           email: data.email,
@@ -148,92 +192,37 @@ export class UserFactory extends BaseFactory {
           role: 'member',
           phone_number: data?.phoneNumber ? data.phoneNumber : '',
           zip_code: data.zipCode,
-          dob: data.dob instanceof Date ? data.dob.toISOString().split('T')[0] : undefined,
+          dob: data.dob instanceof Date
+            ? data.dob.toISOString().split('T')[0]
+            : undefined,
         };
-        
-        
-  
+
         await Axios.post(
           'https://runmysale.com/wp-json/affiliate-subscription/v1/create_user',
           affiliatePayload,
           { headers: { 'Content-Type': 'application/json' } },
         );
-  
-        console.log('Affiliate user created successfully');
+
+        console.log('✅ External user created (non-blocking)');
       } catch (externalErr) {
         const extData = externalErr.response?.data;
         const errorMessage = extData?.message || externalErr.message;
-  
-        console.error('Failed to create user on affiliate system:', extData || externalErr.message);
-  
-        if (
-          extData?.code === 'email_exists' ||
-          errorMessage?.toLowerCase()?.includes('email already exists')
-        ) {
-          return new APIMessage(
-            'User with given email already exists on external system!',
-            APIMessageTypes.ERROR,
-          );
-        }
-  
-        return new APIMessage(
-          'Failed to create user on external system.',
-          APIMessageTypes.ERROR,
-        );
+
+        console.error('⚠️ External user creation failed:', errorMessage);
+        // Optional: log to DB or notify admin
       }
-  
-      // Continue with local DB creation if external succeeded
-      data['id'] = await this.generateSequentialId('users');
-      console.log('Generated user id:', data['id']);
-  
-      data.createdBy = this.getCreatedBy(data);
-      data.password = await getEncryptedPassword(plainPassword);
-      data.passwordEncrypted = encrypt(plainPassword);
-      data['avatar'] = getDefaulAvatarUrl(data.firstName, data.lastName);
-  
-      const newadata = await this.notificationSubscriptionFactory.getAllNotificationSubscriptions({}, data);
-      console.log('Generated notificationSubscriptions:', JSON.stringify(newadata, null, 2));
-  
-      if (Array.isArray(newadata) && newadata.length > 0) {
-        const seen = new Set<string>();
-  
-        const sanitized = newadata
-          .filter(sub => !!sub)
-          .map((sub, index) => {
-            if (!sub.id) sub.id = randomUUID();
-            if (!sub.title) sub.title = `user-${data.id}-title-${index + 1}`;
-            if (!sub.id || seen.has(sub.id)) return null;
-            seen.add(sub.id);
-            return sub;
-          })
-          .filter(Boolean);
-  
-        console.log('Sanitized notificationSubscriptions count:', sanitized.length);
-        data.notificationSubscriptions = sanitized;
-      } else {
-        delete data.notificationSubscriptions;
-      }
-  
-      console.log('Final user data before save:', JSON.stringify(data, null, 2));
-  
-      const newUser = new this.usersModel(data);
-      const result = await newUser.save();
-      const res = new UserDto(result);
-  
-      if (res.role === USER_ROLES.CLIENT) {
-        await this.sendWelcomeText(res);
-      }
-  
-      res['token'] = await generateToken(result);
-      return res;
-    } catch (err) {
-      console.error('Error during addUser:', err);
-      if (err.code === 11000) {
-        console.error('Duplicate key error details:', err.keyValue);
-      }
-      throw err;
+    });
+
+    return res;
+  } catch (err) {
+    console.error('Error during addUser:', err);
+    if (err.code === 11000) {
+      console.error('Duplicate key error details:', err.keyValue);
     }
+    throw err;
   }
+}
+
   
 async addUser2(data: any): Promise<User | APIMessage> {
   try {
@@ -1605,29 +1594,45 @@ console.log(wpToken,'dsdsas');
     }
   }
 
-  async reportUser(
-    reportingUserId: string,
-    reportData: any,
-    user: User,
-  ): Promise<void> {
-    try {
-      if (reportData) {
-        const admin = await this.getAdmin();
-        const reportedUser = await this.getUserById(reportingUserId);
-        if (admin && admin.email) {
-          await sendTemplateEmail(admin.email, MAIL_TEMPLATES.REPORT_USER, {
-            reportingUser: user,
-            reportedUser,
-            message: reportData.message,
-          });
-        }
-      } else {
-        throw new BadRequestException('Invalid Data');
-      }
-    } catch (err) {
-      throw err;
+async reportUser(
+  reportingUserId: string,
+  reportData: any,
+  user: User,
+): Promise<void> {
+  try {
+    console.log('📩 Starting reportUser');
+    console.log('➡️ Reporting User ID:', reportingUserId);
+    console.log('➡️ Report Data:', reportData);
+    console.log('➡️ Reporting User:', user);
+
+    if (!reportData || !reportData.message) {
+      console.warn('⚠️ Invalid reportData received:', reportData);
+      throw new BadRequestException('Invalid Data');
     }
+
+    const admin = await this.getAdmin();
+    console.log('✅ Fetched Admin:', admin?.email);
+
+    const reportedUser = await this.getUserById(reportingUserId);
+    console.log('✅ Fetched Reported User:', reportedUser?.email || reportedUser?.id);
+
+    if (!admin || !admin.email) {
+      throw new Error('❌ Admin email not found');
+    }
+
+    console.log('📨 Sending report email...');
+    await sendTemplateEmail(admin.email, MAIL_TEMPLATES.REPORT_USER, {
+      reportingUser: user,
+      reportedUser,
+      message: reportData.message,
+    });
+    console.log('✅ Email sent successfully to admin');
+  } catch (err) {
+    console.error('🔥 Error in reportUser():', err);
+    throw err;
   }
+}
+
 
   async removeFacebookUser(signedRequest: any): Promise<any> {
     try {

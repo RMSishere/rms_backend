@@ -9,6 +9,7 @@ import { requestSchema } from './request.schema';
 import { UsersModule } from 'src/users/users.module';
 import { ScheduleJobsModule } from '../scheduleJob/scheduleJob.module';
 import { ScheduleFactory } from 'src/scheduleJob/scheduleJob.factory';
+import { NotificationSubscriptioneModule } from 'src/notificationSubscription/notificationSubscription.module';
 
 @Module({
   imports: [
@@ -18,6 +19,8 @@ import { ScheduleFactory } from 'src/scheduleJob/scheduleJob.factory';
     JobReviewModule,
     UsersModule,
     ScheduleJobsModule,
+        NotificationSubscriptioneModule, // ✅ <-- Add this line
+
   ],
   exports: [
     MongooseModule.forFeature([{ name: 'request', schema: requestSchema }]),

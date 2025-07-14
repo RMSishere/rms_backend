@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { Twilio } from 'twilio';
 import { AppointmentFactory } from 'src/appointment/appointment.factory';
 import { JobUpdate, PaginatedData } from 'src/common/interfaces';
 import { JobReviewDto } from 'src/jobReview/jobReview.dto';
@@ -13,6 +14,8 @@ import { NotificationFactory } from 'src/notification/notification.factory';
 import { UserFactory } from 'src/users/users.factory';
 import { getAgreement, getfullName } from 'src/util';
 import { ZipCodeFactory } from 'src/zipCode/zipCode.factory';
+import { NotificationSubscription } from 'src/lib'; // adjust path if needed
+
 import {
   CHARGE_BASIS,
   defaultLeadCalculations,
@@ -36,19 +39,24 @@ import { sendTemplateEmail } from 'src/util/sendMail';
 import { User2Dto } from '../users/users.dto'; // adjust path as needed
 @Injectable()
 export class RequestFactory extends BaseFactory {
-  constructor(
-    @InjectModel('request') public readonly requestModel: Model<Request>,
-    @InjectModel('counters') public readonly countersModel: Model<Counter>,
-    @InjectModel('JobReview') public readonly jobReviewModel: Model<JobReview>,
-    @InjectModel('users') public readonly userModel: Model<User>,
-    public notificationfactory: NotificationFactory,
-    public appointmentfactory: AppointmentFactory,
-    public zipCodeFactory: ZipCodeFactory,
-    public userFactory: UserFactory,
-    public scheduleFactory: ScheduleFactory,
-  ) {
-    super(countersModel);
-  }
+constructor(
+  @InjectModel('request') public readonly requestModel: Model<Request>,
+  @InjectModel('counters') public readonly countersModel: Model<Counter>,
+  @InjectModel('JobReview') public readonly jobReviewModel: Model<JobReview>,
+  @InjectModel('users') public readonly userModel: Model<User>,
+  @InjectModel('NotificationSubscription') public readonly notificationSubscriptionModel: Model<NotificationSubscription>, // <-- ADD THIS LINE
+  public notificationfactory: NotificationFactory,
+  public appointmentfactory: AppointmentFactory,
+  public zipCodeFactory: ZipCodeFactory,
+  public userFactory: UserFactory,
+  public scheduleFactory: ScheduleFactory,
+) {
+  super(countersModel);
+}
+ twilioClient = new Twilio(
+  process.env.TWILIO_ACCOUNT_SID,
+  process.env.TWILIO_AUTH_TOKEN,
+);
 
  async createRequest(data: Request, user: User): Promise<Request> {
   try {
@@ -167,14 +175,42 @@ async getAllRequests(params: any, user: User): Promise<PaginatedData> {
     if (user.role === USER_ROLES.CLIENT) {
       filter['requesterOwner'] = user._id;
     } else if (user.role === USER_ROLES.AFFILIATE) {
-      const affiliate = await this.userFactory.getApprovedAffiliate({
-        _id: user,
+      // 🚫 Check if user is subscribed to "New Jobs"
+      const subscribedToNewJobs = await this.notificationSubscriptionModel.findOne({
+        isActive: true,
+        id: '303',
+        forRoles: { $in: [user.role] },
       });
-      if (affiliate && affiliate.businessProfile.areaServices.length) {
-        filter['zip'] = { $in: affiliate.businessProfile.nearByZipCodes };
-      } else {
-        return { result: [] };
+
+      if (!subscribedToNewJobs) {
+        console.warn(`⛔ Affiliate not subscribed to New Jobs. User ID: ${user.id}`);
+        return { result: [], count: 0, skip: 0 };
       }
+
+      const affiliate = await this.userFactory.getApprovedAffiliate({ _id: user });
+
+      if (!affiliate || !affiliate.businessProfile) {
+        console.warn(`⛔ Invalid affiliate profile for User ID: ${user.id}`);
+        return { result: [], count: 0, skip: 0 };
+      }
+
+      const { businessProfile } = affiliate;
+
+      // ✅ Filter by nearby zip codes
+      if (businessProfile.areaServices?.length) {
+        filter['zip'] = { $in: businessProfile.nearByZipCodes };
+      } else {
+        return { result: [], count: 0, skip: 0 };
+      }
+
+      // ✅ Filter by affiliate's offered services
+      if (businessProfile.services?.length) {
+        filter['requestType'] = { $in: businessProfile.services };
+      } else {
+        console.warn(`⛔ Affiliate does not offer any services. User ID: ${user.id}`);
+        return { result: [], count: 0, skip: 0 };
+      }
+
     } else if (user.role !== USER_ROLES.ADMIN) {
       throw new ForbiddenException();
     }
@@ -226,6 +262,8 @@ async getAllRequests(params: any, user: User): Promise<PaginatedData> {
     throw error;
   }
 }
+
+
 
 
 
@@ -442,44 +480,96 @@ async getAllRequests(params: any, user: User): Promise<PaginatedData> {
     }
   }
 
-  async addJobUpdate(
-    requestId: string,
-    jobUpdate: JobUpdate,
-    user: User,
-  ): Promise<Request> {
-    try {
-      const filter = { id: requestId, isActive: true, hiredAffiliate: user };
+async addJobUpdate(
+  requestId: string,
+  jobUpdate: JobUpdate,
+  user: User,
+): Promise<Request> {
+  try {
+    const filter = { id: requestId, isActive: true, hiredAffiliate: user };
 
-      if (jobUpdate.appointment) {
-        jobUpdate.appointment = await this.createAppointment(
-          requestId,
-          jobUpdate.appointment,
-          user,
-        );
-      }
-
-      const newValue = {
-        $push: {
-          jobUpdates: {
-            ...jobUpdate,
-            createdAt: new Date(),
-          },
-        },
-      };
-
-      const updatedRequest = await this.requestModel.findOneAndUpdate(
-        filter,
-        newValue,
-        { new: true },
+    if (jobUpdate.appointment) {
+      jobUpdate.appointment = await this.createAppointment(
+        requestId,
+        jobUpdate.appointment,
+        user,
       );
 
-      const result = new RequestDto(updatedRequest);
+      // Fetch requester for email/SMS notifications
+      const requestDoc = await this.requestModel
+        .findOne({ id: requestId })
+        .populate('requesterOwner');
 
-      return result;
-    } catch (err) {
-      throw err;
+      if (requestDoc && requestDoc.requesterOwner) {
+        const requester = requestDoc.requesterOwner;
+        const serviceLabel = SERVICES[requestDoc.requestType]?.label || 'Service';
+        const appointmentDate = moment(jobUpdate.appointment.startTime).format('MMMM Do YYYY, h:mm A');
+
+        const title = `Appointment Scheduled`;
+        const description = `Your ${serviceLabel} appointment has been scheduled for ${appointmentDate}.`;
+
+        // ✅ Email via NotificationFactory
+        await this.notificationfactory.sendNotification(
+          requester,
+          NOTIFICATION_TYPES.JOB_STATUS_UPDATES,
+          {
+            inApp: {
+              message: {
+                requestId: requestId,
+                title,
+                description,
+                screen: 'JobUpdates',
+                screenParams: { id: requestId },
+              },
+            },
+            text: {
+              message: `${title}\n${description}`,
+            },
+            email: {
+              template: MAIL_TEMPLATES.NEW_MESSAGE,
+              locals: {
+                subject: title,
+                body: description,
+              },
+            },
+          },
+        );
+
+        // ✅ SMS via Twilio
+        if (requester.phoneNumber) {
+          const toPhoneNumber = requester.phoneNumber.startsWith('+')
+            ? requester.phoneNumber
+            : `+1${requester.phoneNumber}`;
+
+          await this.twilioClient.messages.create({
+            from: process.env.TWILIO_PHONE_NUMBER,
+            to: toPhoneNumber,
+            body: `${title}: ${description}`,
+          });
+        }
+      }
     }
+
+    const newValue = {
+      $push: {
+        jobUpdates: {
+          ...jobUpdate,
+          createdAt: new Date(),
+        },
+      },
+    };
+
+    const updatedRequest = await this.requestModel.findOneAndUpdate(
+      filter,
+      newValue,
+      { new: true },
+    );
+
+    return new RequestDto(updatedRequest);
+  } catch (err) {
+    throw err;
   }
+}
 
   async addJobAgreement(
     requestId: string,
