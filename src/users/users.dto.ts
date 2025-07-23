@@ -2,6 +2,7 @@ import { BusinessProfile, NotificationSubscription } from 'src/lib';
 import { Device } from 'src/util/pushNotification';
 import { BaseDto } from '../lib/base.dto';
 import { User } from '../lib/user';
+
 export class SubscriptionDto {
   subscriptionId?: string;
   customerId?: string;
@@ -59,8 +60,11 @@ export class UserDto extends BaseDto implements User {
     //this.appleProvider = user.appleProvider;
     this.wordpressProvider = user.wordpressProvider;
     this.dob = user.dob;
-      this.index = user.index; // <-- Add this line
-
+    this.index = user.index;
+    this.firsttime = user.firsttime;
+    this.address = user.address;
+    this.distance = user.distance;
+    this.bio = user.bio;
   }
 
   firstName: string;
@@ -92,9 +96,13 @@ export class UserDto extends BaseDto implements User {
     token: string;
   };
   dob: Date;
-    index?: number; // <-- Add this optional field
-
+  index?: number;
+  firsttime?: boolean;
+  address?: string;
+  distance?: number;
+  bio?: string;
 }
+
 export class User2Dto extends UserDto {
   constructor(user?: User) {
     super(user);
