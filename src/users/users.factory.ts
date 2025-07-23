@@ -259,7 +259,6 @@ async addUser2(data: any): Promise<User | APIMessage> {
 
     const plainPassword = data.password;
 
-    // ✅ Generate user ID and default fields
     data['id'] = await this.generateSequentialId('users');
     data.createdBy = this.getCreatedBy(data);
     data.password = await getEncryptedPassword(plainPassword);
@@ -267,21 +266,20 @@ async addUser2(data: any): Promise<User | APIMessage> {
     data['avatar'] = getDefaulAvatarUrl(data.firstName, data.lastName);
     data.isActive = true;
 
-    // ✅ Map flat business data into businessProfile
     data.businessProfile = {
       businessName: data.businessName || '',
       foundingDate: data.foundingDate || null,
       businessImage: data.businessImage || '',
       businessVideo: data.businessVideo || '',
-      bio: '',
+      bio: data.bio || '',
       services: Array.isArray(data.services) ? data.services : [],
       rating: 0,
       ratingCount: 0,
-      serviceCoverageRadius: null,
+      serviceCoverageRadius: data.distance || null,
       areaServices: [],
       nearByZipCodes: [],
-      isApproved: true,
-      approvedDate: null,
+      isApproved: data.firsttime === 1,
+      approvedDate: data.firsttime === false ? new Date() : null,
       termsAccepted: false,
       allowMinimumPricing: data.allowMinimumPricing || false,
       questionAnswers: [
@@ -295,15 +293,14 @@ async addUser2(data: any): Promise<User | APIMessage> {
       ].filter(q => q.answer !== undefined),
     };
 
-    // ✅ Clean up top-level business fields (optional)
     [
       'businessName', 'foundingDate', 'businessImage', 'businessVideo',
       'allowMinimumPricing', 'sellingItemsInfo', 'services',
       'q1_age', 'q2_selling_exp', 'q3_business_exp', 'q4_honest',
-      'q5_work_ethic', 'q6_criminal_history', 'q7_fun'
+      'q5_work_ethic', 'q6_criminal_history', 'q7_fun',
+      'firsttime', 'bio', 'address', 'distance'
     ].forEach(field => delete data[field]);
 
-    // ✅ Notifications setup
     const newadata = await this.notificationSubscriptionFactory.getAllNotificationSubscriptions({}, data);
 
     if (Array.isArray(newadata) && newadata.length > 0) {
@@ -343,6 +340,7 @@ async addUser2(data: any): Promise<User | APIMessage> {
     throw err;
   }
 }
+
 
   
   

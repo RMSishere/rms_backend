@@ -97,7 +97,7 @@ export class UserDto extends BaseDto implements User {
   };
   dob: Date;
   index?: number;
-  firsttime?: boolean;
+  firsttime?: number;
   address?: string;
   distance?: number;
   bio?: string;

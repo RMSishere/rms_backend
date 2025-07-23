@@ -20,7 +20,7 @@ interface Subscription {
 }
 
 export interface User extends Base {
-  firsttime?: boolean;
+  firsttime?: number;
   passwordEncrypted?: string;
   firstName: string;
   lastName: string;
