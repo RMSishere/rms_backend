@@ -234,6 +234,12 @@ async addHelpMessage(@Req() req: Request, @Body() body: any) {
     return this.userFactory.deleteAffiliateProfileById(id);
   }
   
+  @Post('affiliate/:id/deleteProfile')
+async deleteAffiliateProfilePost(@Param('id') id: string) {
+  return this.userFactory.deleteAffiliateProfileById(id);
+}
+
+  
   // @Roles(USER_ROLES.ADMIN)
   @Post('sendText')
   async sendTextMessage(@Req() req, @Body() data: any) {
