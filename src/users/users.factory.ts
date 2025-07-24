@@ -1317,80 +1317,105 @@ async updateBusinessProfile(
 // ----------------------------
 // Helper for WP Sync
 // ----------------------------
-private async syncAffiliateProfileToWP(user: User, bp: BusinessProfile) {
-  try {
-    // 1. Login to WordPress to get a fresh token
-    const wpLoginResponse = await axios.post(
-      'https://runmysale.com/wp-json/affiliate-subscription/v1/login',
-      {
-        username: (user as any).email,
-        password: (user as any).plainPassword || 'defaultPassword', // You must provide the correct password here
-      },
-    );
+// Drop this in your UserFactory – it fixes the TS error by using `this.usersModel`
+// (not `this.usersSchema`) and logs in to WP first to get a token.
 
-    if (!wpLoginResponse.data || !wpLoginResponse.data.token) {
-      console.error('[WP SYNC] Failed to login to WordPress');
+private async syncAffiliateProfileToWP(user: User, bp: BusinessProfile): Promise<void> {
+  try {
+    // 1) Always re-fetch from DB so we have email & passwordEncrypted
+    const dbUser = await this.usersModel
+      .findById(user._id)
+      .select('email passwordEncrypted firstName lastName phoneNumber zipCode dob')
+      .lean();
+
+    if (!dbUser) {
+      console.error('[WP SYNC] User not found in DB:', user._id);
+      return;
+    }
+    if (!dbUser.passwordEncrypted) {
+      console.error('[WP SYNC] passwordEncrypted not available for user:', dbUser.email);
       return;
     }
 
-    const wpToken = wpLoginResponse.data.token;
+    const email = (dbUser.email || '').toLowerCase();
+    const plainPassword = decrypt(dbUser.passwordEncrypted);
 
-    // 2. Prepare payload for update_profile
+    // 2) Login to WordPress to get a fresh token
+    const wpLoginResponse = await axios.post(
+      'https://runmysale.com/wp-json/affiliate-subscription/v1/login',
+      {
+        username: email,
+        password: plainPassword,
+      },
+      { headers: { 'Content-Type': 'application/json' } },
+    );
+
+    const wpToken: string | undefined = wpLoginResponse?.data?.token;
+    if (!wpToken) {
+      console.error('[WP SYNC] Failed to login to WordPress (no token returned)');
+      return;
+    }
+
+    // 3) Prepare payload for update_profile
     const payload: any = {
-      bio: bp?.bio ?? '',
-      distance: bp?.serviceCoverageRadius ?? 0,
-      first_name: (user as any).firstName ?? '',
-      last_name: (user as any).lastName ?? '',
-      phone: (user as any).phoneNumber ?? '',
-      zip_code: (bp as any)?.zip_code ?? (user as any).zipCode ?? '',
+      bio: (bp as any)?.bio ?? '',
+      distance: (bp as any)?.serviceCoverageRadius ?? 0,
+      first_name: dbUser.firstName ?? '',
+      last_name: dbUser.lastName ?? '',
+      phone: dbUser.phoneNumber ?? '',
+      zip_code: (bp as any)?.zip_code ?? dbUser.zipCode ?? '',
       country_code: (bp as any)?.country_code ?? 'US',
-      dob: (user as any).dob
-        ? typeof (user as any).dob === 'string'
-          ? (user as any).dob
-          : (user as any).dob.toISOString().slice(0, 10)
+      dob: dbUser.dob
+        ? (typeof dbUser.dob === 'string'
+            ? dbUser.dob
+            : new Date(dbUser.dob).toISOString().slice(0, 10))
         : undefined,
-      password: (bp as any)?.password,
+      password: plainPassword, // (only if WP expects to keep it in sync)
       role: 'affiliate_member',
-      businessName: (bp as any).businessName,
-      foundingDate: (bp as any).foundingDate,
+      businessName: (bp as any)?.businessName,
+      foundingDate: (bp as any)?.foundingDate,
       allowMinimumPricing:
-        (bp as any).allowMinimumPricing === true ||
-        (bp as any).allowMinimumPricing === 'yes'
+        (bp as any)?.allowMinimumPricing === true ||
+        (bp as any)?.allowMinimumPricing === 'yes'
           ? 'yes'
           : 'no',
-      sellingItemsInfo: (bp as any).sellingItemsInfo,
-      q1_age: (bp as any).q1_age?.toString(),
-      q2_selling_exp: (bp as any).q2_selling_exp,
-      q3_business_exp: (bp as any).q3_business_exp,
-      q4_honest: (bp as any).q4_honest,
-      q5_work_ethic: (bp as any).q5_work_ethic,
-      q6_criminal_history: (bp as any).q6_criminal_history,
-      q7_fun: (bp as any).q7_fun,
-      services: (bp as any).services ?? [],
-      businessImage: (bp as any).businessImage,
-      businessVideo: (bp as any).businessVideo,
+      sellingItemsInfo: (bp as any)?.sellingItemsInfo,
+      q1_age: (bp as any)?.q1_age?.toString?.(),
+      q2_selling_exp: (bp as any)?.q2_selling_exp,
+      q3_business_exp: (bp as any)?.q3_business_exp,
+      q4_honest: (bp as any)?.q4_honest,
+      q5_work_ethic: (bp as any)?.q5_work_ethic,
+      q6_criminal_history: (bp as any)?.q6_criminal_history,
+      q7_fun: (bp as any)?.q7_fun,
+      services: (bp as any)?.services ?? [],
+      businessImage: (bp as any)?.businessImage,
+      businessVideo: (bp as any)?.businessVideo,
     };
 
+    // strip undefined/null fields
     Object.keys(payload).forEach((k) => {
       if (payload[k] === undefined || payload[k] === null) delete payload[k];
     });
 
-    // 3. Call update_profile with Authorization header
+    // 4) Sync to WordPress
     await axios.post(
       'https://runmysale.com/wp-json/affiliate-subscription/v1/update_profile',
       payload,
       {
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${wpToken}`,
+          Authorization: `Bearer ${wpToken}`,
         },
         timeout: 15000,
       },
     );
+
+    console.log('[WP SYNC] Successfully synced profile for:', email);
   } catch (err: any) {
-    console.error('[WP SYNC Error]', err.response?.data || err.message);
+    console.error('[WP SYNC Error]', err?.response?.data || err.message || err);
   }
 }
+
 
   async approveBusinessProfile(id: string, user: User): Promise<User> {
     try {
