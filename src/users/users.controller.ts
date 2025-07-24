@@ -59,6 +59,10 @@ async wpRegister(@Body() data: UserDto) {
 
   return this.userFactory.addUser2(data);
 }
+@Put('wp-update')
+async wpUpdate(@Body() data: UserDto) {
+  return this.userFactory.updateUser2(data);
+}
 
   @Post('facebook/removeUser')
   async removeFacebookUser(@Body('signed_request') signedRequest: any) {
@@ -233,7 +237,7 @@ async addHelpMessage(@Req() req: Request, @Body() body: any) {
   async deleteAffiliateProfile(@Param('id') id: string) {
     return this.userFactory.deleteAffiliateProfileById(id);
   }
-  
+
   @Post('affiliate/:id/deleteProfile')
 async deleteAffiliateProfilePost(@Param('id') id: string) {
   return this.userFactory.deleteAffiliateProfileById(id);

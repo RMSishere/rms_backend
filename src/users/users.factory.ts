@@ -222,6 +222,111 @@ async addUser(data: User): Promise<User | APIMessage> {
     throw err;
   }
 }
+async updateUser2(data: any): Promise<User | APIMessage> {
+  try {
+    console.log('Raw input data (update):', data);
+
+    if (!data.email && !data.phoneNumber) {
+      return new APIMessage(
+        'Email or Phone number is required to update user!',
+        APIMessageTypes.ERROR,
+      );
+    }
+
+    // Find the user to update
+    const existingUser = await this.usersModel.findOne({
+      $or: [
+        { email: data.email?.toLowerCase() },
+        { phoneNumber: data.phoneNumber }
+      ],
+    });
+
+    if (!existingUser) {
+      return new APIMessage('User not found!', APIMessageTypes.ERROR);
+    }
+
+    // Prepare updates
+    const plainPassword = data.password || null;
+    const updatePayload: any = { ...data };
+
+    if (plainPassword) {
+      updatePayload.password = await getEncryptedPassword(plainPassword);
+      updatePayload.passwordEncrypted = encrypt(plainPassword);
+    }
+
+    // Update businessProfile if provided
+    if (data.businessName || data.bio || data.services) {
+      updatePayload.businessProfile = {
+        businessName: data.businessName ?? existingUser.businessProfile?.businessName ?? '',
+        foundingDate: data.foundingDate ?? existingUser.businessProfile?.foundingDate ?? null,
+        businessImage: data.businessImage ?? existingUser.businessProfile?.businessImage ?? '',
+        businessVideo: data.businessVideo ?? existingUser.businessProfile?.businessVideo ?? '',
+        bio: data.bio ?? existingUser.businessProfile?.bio ?? '',
+        services: Array.isArray(data.services) ? data.services : existingUser.businessProfile?.services ?? [],
+        rating: existingUser.businessProfile?.rating ?? 0,
+        ratingCount: existingUser.businessProfile?.ratingCount ?? 0,
+        serviceCoverageRadius: data.distance ?? existingUser.businessProfile?.serviceCoverageRadius ?? 0,
+        areaServices: existingUser.businessProfile?.areaServices ?? [],
+        nearByZipCodes: existingUser.businessProfile?.nearByZipCodes ?? [],
+        isApproved: existingUser.businessProfile?.isApproved ?? false,
+        approvedDate: existingUser.businessProfile?.approvedDate ?? null,
+        termsAccepted: existingUser.businessProfile?.termsAccepted ?? false,
+        allowMinimumPricing: data.allowMinimumPricing ?? existingUser.businessProfile?.allowMinimumPricing ?? false,
+        questionAnswers: [
+          { question: 'What is your age?', answer: data.q1_age ?? '' },
+          { question: 'Do you have selling experience?', answer: data.q2_selling_exp ?? '' },
+          { question: 'How long have you been in business?', answer: data.q3_business_exp ?? '' },
+          { question: 'Are you honest?', answer: data.q4_honest ?? '' },
+          { question: 'How is your work ethic?', answer: data.q5_work_ethic ?? '' },
+          { question: 'Any criminal history?', answer: data.q6_criminal_history ?? '' },
+          { question: 'What makes you fun to work with?', answer: data.q7_fun ?? '' },
+        ].filter(q => q.answer !== undefined),
+      };
+    }
+
+    // Remove fields not needed in DB
+    [
+      'businessName', 'foundingDate', 'businessImage', 'businessVideo',
+      'allowMinimumPricing', 'sellingItemsInfo', 'services',
+      'q1_age', 'q2_selling_exp', 'q3_business_exp', 'q4_honest',
+      'q5_work_ethic', 'q6_criminal_history', 'q7_fun',
+      'firsttime', 'bio', 'address', 'distance'
+    ].forEach(field => delete updatePayload[field]);
+
+    console.log('Final user data before update:', JSON.stringify(updatePayload, null, 2));
+
+    // Update the user in DB
+    const updatedUser = await this.usersModel.findByIdAndUpdate(
+      existingUser._id,
+      { $set: updatePayload },
+      { new: true },
+    );
+
+    if (!updatedUser) {
+      return new APIMessage('User update failed!', APIMessageTypes.ERROR);
+    }
+
+    const res = new UserDto(updatedUser);
+
+    // Update token
+    res['token'] = await generateToken(updatedUser);
+
+    // ✅ Sync with WordPress (non-blocking)
+    setImmediate(async () => {
+      try {
+        await this.syncAffiliateProfileToWP(updatedUser, updatedUser.businessProfile);
+        console.log('✅ User synced with WordPress (update)');
+      } catch (err) {
+        console.error('⚠️ WordPress sync failed (update):', err.message || err);
+      }
+    });
+
+    return res;
+  } catch (err) {
+    console.error('Error during updateUser2:', err);
+    throw err;
+  }
+}
 
   
 async addUser2(data: any): Promise<User | APIMessage> {
