@@ -17,5 +17,9 @@ export interface BusinessProfile extends Base {
   approvedDate: Date;
   termsAccepted: boolean;
   allowMinimumPricing: boolean;
-  // sellingItemCharge: { chargeBasis: string, fee: number }
+
+  // Add these optional fields for WP sync
+  zip_code?: string;
+  country_code?: string;
 }
+

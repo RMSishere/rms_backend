@@ -1226,79 +1226,148 @@ console.log(user,'userrr');
       throw err;
     }
   }
-  async createBusinessProfile(
-    data: BusinessProfile,
-    user: User,
-  ): Promise<User | APIMessage> {
-    try {
-      if (!data.termsAccepted) {
-        return new APIMessage(
-          'Please accept terms and conditions!',
-          APIMessageTypes.ERROR,
-        );
-      }
 
-      if (
-        data.serviceCoverageRadius > 0 &&
-        data.areaServices &&
-        data.areaServices.length
-      ) {
-        const res = await this.getAreaServiceAndNearByZipCodes(
-          data.areaServices,
-          data.serviceCoverageRadius,
-        );
-        data.areaServices = res.areaServices;
-        data.nearByZipCodes = res.nearByZipCodes;
-      }
-console.log(user);
-      const updatedUser = await this.updateUserData(
-        { businessProfile: data },
-        user,
-      ) as User;
-
-      if (updatedUser?._id) {
-        await this.sendWelcomeText(updatedUser);
-      }
-
-      return updatedUser;
-    } catch (err) {
-      throw err;
+async createBusinessProfile(
+  data: BusinessProfile,
+  user: User,
+): Promise<User | APIMessage> {
+  try {
+    if (!data.termsAccepted) {
+      return new APIMessage(
+        'Please accept terms and conditions!',
+        APIMessageTypes.ERROR,
+      );
     }
-  }
-  async updateBusinessProfile(
-    data: BusinessProfile,
-    user: User,
-  ): Promise<User | APIMessage> {
-    try {
-      data.updatedBy = this.getUpdatedBy(user);
 
-      if (
-        data.serviceCoverageRadius &&
-        data.serviceCoverageRadius > 0 &&
-        data.areaServices &&
-        data.areaServices.length
-      ) {
-        const res = await this.getAreaServiceAndNearByZipCodes(
-          data.areaServices,
-          data.serviceCoverageRadius,
-        );
-        data.areaServices = res.areaServices;
-        data.nearByZipCodes = res.nearByZipCodes;
-      }
-
-      const dataToUpdate = {};
-
-      Object.keys(data).map(key => {
-        dataToUpdate[`businessProfile.${key}`] = data[key];
-      });
-
-      const updateUser = await this.updateUserData(dataToUpdate, user);
-
-      return updateUser;
-    } catch (err) {
-      throw err;
+    if (
+      data.serviceCoverageRadius > 0 &&
+      data.areaServices &&
+      data.areaServices.length
+    ) {
+      const res = await this.getAreaServiceAndNearByZipCodes(
+        data.areaServices,
+        data.serviceCoverageRadius,
+      );
+      data.areaServices = res.areaServices;
+      data.nearByZipCodes = res.nearByZipCodes;
     }
+
+    const updatedUser = (await this.updateUserData(
+      { businessProfile: data },
+      user,
+    )) as User;
+
+    if (updatedUser?._id) {
+      await this.sendWelcomeText(updatedUser);
+
+      // 🔁 WordPress Sync (non-blocking)
+      this.syncAffiliateProfileToWP(updatedUser, data).catch((e) =>
+        console.error('[WP SYNC][createBusinessProfile] failed:', e?.message || e),
+      );
+    }
+
+    return updatedUser;
+  } catch (err) {
+    throw err;
   }
+}
+
+async updateBusinessProfile(
+  data: BusinessProfile,
+  user: User,
+): Promise<User | APIMessage> {
+  try {
+    data.updatedBy = this.getUpdatedBy(user);
+
+    if (
+      data.serviceCoverageRadius &&
+      data.serviceCoverageRadius > 0 &&
+      data.areaServices &&
+      data.areaServices.length
+    ) {
+      const res = await this.getAreaServiceAndNearByZipCodes(
+        data.areaServices,
+        data.serviceCoverageRadius,
+      );
+      data.areaServices = res.areaServices;
+      data.nearByZipCodes = res.nearByZipCodes;
+    }
+
+    const dataToUpdate: Record<string, any> = {};
+    Object.keys(data).forEach((key) => {
+      dataToUpdate[`businessProfile.${key}`] = (data as any)[key];
+    });
+
+    const updatedUser = (await this.updateUserData(
+      dataToUpdate,
+      user,
+    )) as User;
+
+    // 🔁 WordPress Sync (non-blocking)
+    this.syncAffiliateProfileToWP(updatedUser, data).catch((e) =>
+      console.error('[WP SYNC][updateBusinessProfile] failed:', e?.message || e),
+    );
+
+    return updatedUser;
+  } catch (err) {
+    throw err;
+  }
+}
+
+// ----------------------------
+// Helper for WP Sync
+// ----------------------------
+private async syncAffiliateProfileToWP(user: User, bp: BusinessProfile) {
+  const payload: any = {
+    token: '7lj6nLRZu7AYU5y+Kc3421G0VXBXBvadD9hwV3VgB5g=',
+    bio: bp?.bio ?? '',
+    distance: bp?.serviceCoverageRadius ?? 0,
+    first_name: (user as any).firstName ?? '',
+    last_name: (user as any).lastName ?? '',
+    phone: (user as any).phoneNumber ?? '',
+    zip_code: bp?.zip_code ?? (user as any).zipCode ?? '',
+    country_code: bp?.country_code ?? 'US',
+    dob: (user as any).dob
+      ? typeof (user as any).dob === 'string'
+        ? (user as any).dob
+        : (user as any).dob.toISOString().slice(0, 10)
+      : undefined,
+    password: (bp as any)?.password,
+    role: 'affiliate_member',
+    businessName: (bp as any).businessName,
+    foundingDate: (bp as any).foundingDate,
+    allowMinimumPricing:
+      (bp as any).allowMinimumPricing === true ||
+      (bp as any).allowMinimumPricing === 'yes'
+        ? 'yes'
+        : 'no',
+    sellingItemsInfo: (bp as any).sellingItemsInfo,
+    q1_age: (bp as any).q1_age?.toString(),
+    q2_selling_exp: (bp as any).q2_selling_exp,
+    q3_business_exp: (bp as any).q3_business_exp,
+    q4_honest: (bp as any).q4_honest,
+    q5_work_ethic: (bp as any).q5_work_ethic,
+    q6_criminal_history: (bp as any).q6_criminal_history,
+    q7_fun: (bp as any).q7_fun,
+    services: (bp as any).services ?? [],
+    businessImage: (bp as any).businessImage,
+    businessVideo: (bp as any).businessVideo,
+  };
+
+  Object.keys(payload).forEach((k) => {
+    if (payload[k] === undefined || payload[k] === null) delete payload[k];
+  });
+
+  await axios.post(
+    'https://runmysale.com/wp-json/affiliate-subscription/v1/update_profile',
+    payload,
+    {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 15000,
+    },
+  );
+}
+
   async approveBusinessProfile(id: string, user: User): Promise<User> {
     try {
       const filter = { id };
