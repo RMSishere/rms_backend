@@ -59,7 +59,7 @@ async wpRegister(@Body() data: UserDto) {
 
   return this.userFactory.addUser2(data);
 }
-@Put('wp-update')
+@Post('wp-update')
 async wpUpdate(@Body() data: UserDto) {
   return this.userFactory.updateUser2(data);
 }
