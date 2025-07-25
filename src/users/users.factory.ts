@@ -1209,23 +1209,54 @@ async addHelpMessage(data: HelpMessage, user: User): Promise<HelpMessage> {
 }
 
   
-  async deleteAffiliateProfileById(id: string): Promise<{ success: boolean; message: string }> {
-    try {
-      const result = await this.usersModel.deleteOne({ _id: id });
-  
-      if (result.deletedCount === 0) {
-        throw new BadRequestException('Affiliate not found or already deleted');
-      }
-  
-      return {
-        success: true,
-        message: 'Affiliate profile deleted successfully',
-      };
-    } catch (err) {
-      console.error('[deleteAffiliateProfileById] Error:', err);
-      throw err;
+async deleteAffiliateProfileById(id: string): Promise<{ success: boolean; message: string }> {
+  try {
+    // Find the user in your local DB to get email and password (if stored)
+    const user = await this.usersModel.findById(id);
+    if (!user) {
+      throw new BadRequestException('Affiliate not found');
     }
+
+    const email = user.email;
+    const plainPassword = user.password; // Ensure you have the plain password stored or retrievable
+
+    // 1) Login to WordPress
+    const wpLoginResponse = await axios.post(
+      'https://runmysale.com/wp-json/affiliate-subscription/v1/login',
+      { username: email, password: plainPassword },
+      { headers: { 'Content-Type': 'application/json' } },
+    );
+
+    if (!wpLoginResponse?.data?.success || !wpLoginResponse?.data?.token) {
+      console.error('[WP SYNC] WordPress login failed', wpLoginResponse?.data);
+      throw new BadRequestException('Failed to authenticate with WordPress');
+    }
+
+    const wpToken = wpLoginResponse.data.token;
+
+    // 2) Delete the user from WordPress
+    await axios.post(
+      'https://runmysale.com/wp-json/affsub/v1/delete-user',
+      { email: email },
+      { headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${wpToken}` } }
+    );
+
+    // 3) Delete the user from local database
+    const result = await this.usersModel.deleteOne({ _id: id });
+    if (result.deletedCount === 0) {
+      throw new BadRequestException('Affiliate not found or already deleted');
+    }
+
+    return {
+      success: true,
+      message: 'Affiliate profile deleted successfully from both systems',
+    };
+  } catch (err) {
+    console.error('[deleteAffiliateProfileById] Error:', err);
+    throw err;
   }
+}
+
   
   
   
