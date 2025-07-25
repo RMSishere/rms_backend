@@ -1247,16 +1247,19 @@ async deleteAffiliateProfileById(id: string): Promise<{ success: boolean; messag
     // 2) Delete from WordPress
     console.log('[WP DELETE] Payload being sent:', `{\n"email": "${email}"\n}`);
     await axios.post(
-      'https://runmysale.com/wp-json/affsub/v1/delete-user',
-      `{\n"email": "${email}"\n}`,  // RAW TEXT, not object
-      {
-        headers: {
-          'Content-Type': 'text/plain',
-          'Cookie': phpSessionCookie.split(';')[0],
-        },
-        timeout: 10000,
-      }
-    );
+  'https://runmysale.com/wp-json/affsub/v1/delete-user',
+  `{
+"email": "${email}"
+}`,
+  {
+    headers: {
+      'Content-Type': 'text/plain',
+      'Cookie': phpSessionCookie.split(';')[0],  // PHPSESSID
+    },
+    timeout: 10000,
+  }
+);
+
     console.log(`[WP DELETE] WordPress deletion successful for email: ${email}`);
 
     // 3) Delete from local DB only if WP deletion succeeds
