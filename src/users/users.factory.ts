@@ -1270,7 +1270,7 @@ async deleteAffiliateProfileById(id: string): Promise<{ success: boolean; messag
     );
     console.log(`[WP DELETE] WordPress deletion successful for email: ${email}`);
 
-    // 4) Delete from local DB
+    // 4) Delete from local DB (only if WP deletion is successful)
     const result = await this.usersModel.deleteOne({ _id: id });
     console.log(`[WP DELETE] Local DB deletion result:`, result);
 
@@ -1290,6 +1290,7 @@ async deleteAffiliateProfileById(id: string): Promise<{ success: boolean; messag
     throw err;
   }
 }
+
 
 
 
