@@ -1212,16 +1212,13 @@ async deleteAffiliateProfileById(id: string): Promise<{ success: boolean; messag
   try {
     console.log(`[WP DELETE] Starting deletion process for user ID: ${id}`);
 
-    // 1) Fetch user from DB
     const dbUser = await this.usersModel
       .findById(id)
       .select('email passwordEncrypted')
       .lean();
-
     console.log(`[WP DELETE] Fetched user from DB:`, dbUser);
 
     if (!dbUser || !dbUser.passwordEncrypted) {
-      console.error(`[WP DELETE] No user found or no password stored for ID: ${id}`);
       throw new BadRequestException('Affiliate not found or no password stored');
     }
 
@@ -1229,7 +1226,7 @@ async deleteAffiliateProfileById(id: string): Promise<{ success: boolean; messag
     const plainPassword = decrypt(dbUser.passwordEncrypted);
     console.log(`[WP DELETE] Decrypted password for email: ${email}`);
 
-    // 2) Login to WordPress
+    // 1) Login to WordPress
     console.log(`[WP DELETE] Logging into WordPress for email: ${email}`);
     const wpLoginResponse = await axios.post(
       'https://runmysale.com/wp-json/affiliate-subscription/v1/login',
@@ -1240,26 +1237,18 @@ async deleteAffiliateProfileById(id: string): Promise<{ success: boolean; messag
     console.log(`[WP DELETE] WordPress login response:`, wpLoginResponse.data);
 
     if (!wpLoginResponse?.headers['set-cookie']) {
-      console.error(`[WP DELETE] No cookie returned from WordPress login`);
       throw new BadRequestException('WordPress login failed (no PHPSESSID)');
     }
 
     const cookies = wpLoginResponse.headers['set-cookie'];
-    console.log(`[WP DELETE] WordPress cookies:`, cookies);
-
     const phpSessionCookie = cookies.find((c: string) => c.startsWith('PHPSESSID=')) || '';
-    if (!phpSessionCookie) {
-      console.error(`[WP DELETE] PHPSESSID cookie not found in login response`);
-      throw new BadRequestException('PHPSESSID cookie not found in login response');
-    }
-
     console.log(`[WP DELETE] PHPSESSID: ${phpSessionCookie.split(';')[0]}`);
 
-    // 3) Delete from WordPress (use raw JSON and text/plain)
-    console.log(`[WP DELETE] Sending delete request to WordPress for email: ${email}`);
+    // 2) Delete from WordPress
+    console.log('[WP DELETE] Payload being sent:', `{\n"email": "${email}"\n}`);
     await axios.post(
       'https://runmysale.com/wp-json/affsub/v1/delete-user',
-      JSON.stringify({ email: email }),
+      `{\n"email": "${email}"\n}`,  // RAW TEXT, not object
       {
         headers: {
           'Content-Type': 'text/plain',
@@ -1270,26 +1259,22 @@ async deleteAffiliateProfileById(id: string): Promise<{ success: boolean; messag
     );
     console.log(`[WP DELETE] WordPress deletion successful for email: ${email}`);
 
-    // 4) Delete from local DB (only if WP deletion is successful)
+    // 3) Delete from local DB only if WP deletion succeeds
     const result = await this.usersModel.deleteOne({ _id: id });
     console.log(`[WP DELETE] Local DB deletion result:`, result);
 
     if (result.deletedCount === 0) {
-      console.error(`[WP DELETE] Affiliate not found or already deleted in DB`);
       throw new BadRequestException('Affiliate not found or already deleted');
     }
 
     console.log(`[WP DELETE] Deletion completed successfully for user ID: ${id}`);
-
-    return {
-      success: true,
-      message: 'Affiliate profile deleted successfully from both systems',
-    };
+    return { success: true, message: 'Affiliate profile deleted successfully from both systems' };
   } catch (err: any) {
     console.error('[deleteAffiliateProfileById] Error:', err.response?.data || err.message);
     throw err;
   }
 }
+
 
 
 
