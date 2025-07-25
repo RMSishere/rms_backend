@@ -1208,10 +1208,14 @@ async addHelpMessage(data: HelpMessage, user: User): Promise<HelpMessage> {
   }
 }
 
-async deleteAffiliateProfileById(id: string): Promise<{ success: boolean; message: string }> {
+async deleteAffiliateProfileById(
+  this: any,
+  id: string
+): Promise<{ success: boolean; message: string }> {
   try {
     console.log(`[WP DELETE] Starting deletion process for user ID: ${id}`);
 
+    // 1) Fetch user
     const dbUser = await this.usersModel
       .findById(id)
       .select('email passwordEncrypted')
@@ -1226,7 +1230,7 @@ async deleteAffiliateProfileById(id: string): Promise<{ success: boolean; messag
     const plainPassword = decrypt(dbUser.passwordEncrypted);
     console.log(`[WP DELETE] Decrypted password for email: ${email}`);
 
-    // 1) Login to WordPress
+    // 2) Login to WordPress
     console.log(`[WP DELETE] Logging into WordPress for email: ${email}`);
     const wpLoginResponse = await axios.post(
       'https://runmysale.com/wp-json/affiliate-subscription/v1/login',
@@ -1241,28 +1245,32 @@ async deleteAffiliateProfileById(id: string): Promise<{ success: boolean; messag
     }
 
     const cookies = wpLoginResponse.headers['set-cookie'];
-    const phpSessionCookie = cookies.find((c: string) => c.startsWith('PHPSESSID=')) || '';
+    const phpSessionCookie =
+      cookies.find((c: string) => c.startsWith('PHPSESSID=')) || '';
     console.log(`[WP DELETE] PHPSESSID: ${phpSessionCookie.split(';')[0]}`);
 
-    // 2) Delete from WordPress
-    console.log('[WP DELETE] Payload being sent:', `{\n"email": "${email}"\n}`);
+    // 3) Delete from WordPress with secret
+    const deletePayload = {
+      email: email,
+      secret: 'MyUltraSecureSecret123',
+    };
+    console.log('[WP DELETE] Sending delete request with payload:', deletePayload);
+
     await axios.post(
-  'https://runmysale.com/wp-json/affsub/v1/delete-user',
-  `{
-"email": "${email}"
-}`,
-  {
-    headers: {
-      'Content-Type': 'text/plain',
-      'Cookie': phpSessionCookie.split(';')[0],  // PHPSESSID
-    },
-    timeout: 10000,
-  }
-);
+      'https://runmysale.com/wp-json/affsub/v1/delete-user',
+      deletePayload,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Cookie': phpSessionCookie.split(';')[0],
+        },
+        timeout: 10000,
+      }
+    );
 
     console.log(`[WP DELETE] WordPress deletion successful for email: ${email}`);
 
-    // 3) Delete from local DB only if WP deletion succeeds
+    // 4) Delete from local DB only if WP deletion succeeds
     const result = await this.usersModel.deleteOne({ _id: id });
     console.log(`[WP DELETE] Local DB deletion result:`, result);
 
@@ -1271,9 +1279,15 @@ async deleteAffiliateProfileById(id: string): Promise<{ success: boolean; messag
     }
 
     console.log(`[WP DELETE] Deletion completed successfully for user ID: ${id}`);
-    return { success: true, message: 'Affiliate profile deleted successfully from both systems' };
+    return {
+      success: true,
+      message: 'Affiliate profile deleted successfully from both systems',
+    };
   } catch (err: any) {
-    console.error('[deleteAffiliateProfileById] Error:', err.response?.data || err.message);
+    console.error(
+      '[deleteAffiliateProfileById] Error:',
+      err.response?.data || err.message
+    );
     throw err;
   }
 }
