@@ -237,10 +237,11 @@ async addHelpMessage(@Req() req: Request, @Body() body: any) {
   async deleteAffiliateProfile(@Param('id') id: string) {
     return this.userFactory.deleteAffiliateProfileById(id);
   }
+  
 
   @Post('affiliate/:id/deleteProfile')
 async deleteAffiliateProfilePost(@Param('id') id: string) {
-  return this.userFactory.deleteAffiliateProfileById(id);
+  return this.userFactory.deleteAffiliateProfileById2(id);
 }
 
   

@@ -1293,6 +1293,46 @@ async deleteAffiliateProfileById(
 }
 
 
+async deleteAffiliateProfileById2(
+  this: any,
+  id: string
+): Promise<{ success: boolean; message: string }> {
+  try {
+    console.log(`[LOCAL DELETE] Starting deletion process for user ID: ${id}`);
+
+    // 1) Fetch user
+    const dbUser = await this.usersModel
+      .findById(id)
+      .select('email')
+      .lean();
+    console.log(`[LOCAL DELETE] Fetched user from DB:`, dbUser);
+
+    if (!dbUser) {
+      throw new BadRequestException('Affiliate not found in the database');
+    }
+
+    // 2) Delete from local DB
+    const result = await this.usersModel.deleteOne({ _id: id });
+    console.log(`[LOCAL DELETE] Local DB deletion result:`, result);
+
+    if (result.deletedCount === 0) {
+      throw new BadRequestException('Affiliate not found or already deleted');
+    }
+
+    console.log(`[LOCAL DELETE] Deletion completed successfully for user ID: ${id}`);
+    return {
+      success: true,
+      message: 'Affiliate profile deleted successfully from local system',
+    };
+  } catch (err: any) {
+    console.error(
+      '[deleteAffiliateProfileById] Error:',
+      err.response?.data || err.message
+    );
+    throw err;
+  }
+}
+
 
 
 
