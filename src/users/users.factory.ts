@@ -1208,40 +1208,53 @@ async addHelpMessage(data: HelpMessage, user: User): Promise<HelpMessage> {
   }
 }
 
-  
 async deleteAffiliateProfileById(id: string): Promise<{ success: boolean; message: string }> {
   try {
-    // Find the user in your local DB to get email and password (if stored)
-    const user = await this.usersModel.findById(id);
-    if (!user) {
-      throw new BadRequestException('Affiliate not found');
+    const dbUser = await this.usersModel
+      .findById(id)
+      .select('email passwordEncrypted')
+      .lean();
+
+    if (!dbUser || !dbUser.passwordEncrypted) {
+      throw new BadRequestException('Affiliate not found or no password stored');
     }
 
-    const email = user.email;
-    const plainPassword = user.password; // Ensure you have the plain password stored or retrievable
+    const email = dbUser.email.toLowerCase();
+    const plainPassword = decrypt(dbUser.passwordEncrypted);
 
-    // 1) Login to WordPress
+    // 1) Login to WordPress to get PHPSESSID cookie
     const wpLoginResponse = await axios.post(
       'https://runmysale.com/wp-json/affiliate-subscription/v1/login',
       { username: email, password: plainPassword },
-      { headers: { 'Content-Type': 'application/json' } },
+      { headers: { 'Content-Type': 'application/json' }, withCredentials: true }
     );
 
-    if (!wpLoginResponse?.data?.success || !wpLoginResponse?.data?.token) {
-      console.error('[WP SYNC] WordPress login failed', wpLoginResponse?.data);
-      throw new BadRequestException('Failed to authenticate with WordPress');
+    if (!wpLoginResponse?.headers['set-cookie']) {
+      console.error('[WP DELETE] No cookie returned on login', wpLoginResponse?.data);
+      throw new BadRequestException('WordPress login failed (no PHPSESSID)');
     }
 
-    const wpToken = wpLoginResponse.data.token;
+    // Extract PHPSESSID from cookies
+    const cookies = wpLoginResponse.headers['set-cookie'];
+    const phpSessionCookie = cookies.find((c: string) => c.startsWith('PHPSESSID=')) || '';
+    if (!phpSessionCookie) {
+      throw new BadRequestException('PHPSESSID cookie not found in login response');
+    }
 
-    // 2) Delete the user from WordPress
+    // 2) Call delete-user with cookie
     await axios.post(
       'https://runmysale.com/wp-json/affsub/v1/delete-user',
       { email: email },
-      { headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${wpToken}` } }
+      {
+        headers: {
+          'Content-Type': 'text/plain',
+          'Cookie': phpSessionCookie.split(';')[0], // Use PHPSESSID
+        },
+        timeout: 10000,
+      }
     );
 
-    // 3) Delete the user from local database
+    // 3) Delete from local DB
     const result = await this.usersModel.deleteOne({ _id: id });
     if (result.deletedCount === 0) {
       throw new BadRequestException('Affiliate not found or already deleted');
@@ -1251,11 +1264,12 @@ async deleteAffiliateProfileById(id: string): Promise<{ success: boolean; messag
       success: true,
       message: 'Affiliate profile deleted successfully from both systems',
     };
-  } catch (err) {
-    console.error('[deleteAffiliateProfileById] Error:', err);
+  } catch (err: any) {
+    console.error('[deleteAffiliateProfileById] Error:', err.response?.data || err.message);
     throw err;
   }
 }
+
 
   
   
@@ -1456,86 +1470,86 @@ async updateBusinessProfile(
 // Drop this in your UserFactory – it fixes the TS error by using `this.usersModel`
 // (not `this.usersSchema`) and logs in to WP first to get a token.
 
-private async syncAffiliateProfileToWP(user: User, bp: BusinessProfile): Promise<void> {
-  try {
-    const dbUser = await this.usersModel
-      .findById(user._id)
-      .select('email passwordEncrypted firstName lastName phoneNumber zipCode dob')
-      .lean();
+  private async syncAffiliateProfileToWP(user: User, bp: BusinessProfile): Promise<void> {
+    try {
+      const dbUser = await this.usersModel
+        .findById(user._id)
+        .select('email passwordEncrypted firstName lastName phoneNumber zipCode dob')
+        .lean();
 
-    if (!dbUser || !dbUser.passwordEncrypted) return;
+      if (!dbUser || !dbUser.passwordEncrypted) return;
 
-    const email = dbUser.email.toLowerCase();
-    const plainPassword = decrypt(dbUser.passwordEncrypted);
+      const email = dbUser.email.toLowerCase();
+      const plainPassword = decrypt(dbUser.passwordEncrypted);
 
-    // 1) Login to WordPress
-    const wpLoginResponse = await axios.post(
-      'https://runmysale.com/wp-json/affiliate-subscription/v1/login',
-      { username: email, password: plainPassword },
-      { headers: { 'Content-Type': 'application/json' } },
-    );
+      // 1) Login to WordPress
+      const wpLoginResponse = await axios.post(
+        'https://runmysale.com/wp-json/affiliate-subscription/v1/login',
+        { username: email, password: plainPassword },
+        { headers: { 'Content-Type': 'application/json' } },
+      );
 
-    if (!wpLoginResponse?.data?.success || !wpLoginResponse?.data?.token) {
-      console.error('[WP SYNC] WordPress login failed', wpLoginResponse?.data);
-      return;
+      if (!wpLoginResponse?.data?.success || !wpLoginResponse?.data?.token) {
+        console.error('[WP SYNC] WordPress login failed', wpLoginResponse?.data);
+        return;
+      }
+
+      const wpToken = wpLoginResponse.data.token;
+      const wpUserId = wpLoginResponse.data.user_id;
+
+      // 2) Prepare payload for update_profile
+      const payload: any = {
+        token: wpToken,   // Pass token in body
+        user_id: wpUserId, // Pass user_id if API expects it
+        bio: bp?.bio ?? '',
+        distance: bp?.serviceCoverageRadius ?? 0,
+        first_name: dbUser.firstName ?? '',
+        last_name: dbUser.lastName ?? '',
+        phone: dbUser.phoneNumber ?? '',
+        zip_code: (bp as any)?.zip_code ?? dbUser.zipCode ?? '',
+        country_code: (bp as any)?.country_code ?? 'US',
+        dob: dbUser.dob
+          ? (typeof dbUser.dob === 'string'
+              ? dbUser.dob
+              : new Date(dbUser.dob).toISOString().slice(0, 10))
+          : undefined,
+        password: plainPassword,
+        role: 'affiliate_member',
+        businessName: (bp as any).businessName,
+        foundingDate: (bp as any).foundingDate,
+        allowMinimumPricing:
+          (bp as any).allowMinimumPricing === true || (bp as any).allowMinimumPricing === 'yes'
+            ? 'yes'
+            : 'no',
+        sellingItemsInfo: (bp as any).sellingItemsInfo,
+        q1_age: (bp as any).q1_age?.toString(),
+        q2_selling_exp: (bp as any).q2_selling_exp,
+        q3_business_exp: (bp as any).q3_business_exp,
+        q4_honest: (bp as any).q4_honest,
+        q5_work_ethic: (bp as any).q5_work_ethic,
+        q6_criminal_history: (bp as any).q6_criminal_history,
+        q7_fun: (bp as any).q7_fun,
+        services: (bp as any).services ?? [],
+        businessImage: (bp as any).businessImage,
+        businessVideo: (bp as any).businessVideo,
+      };
+
+      Object.keys(payload).forEach((k) => {
+        if (payload[k] === undefined || payload[k] === null) delete payload[k];
+      });
+
+      // 3) Call update_profile with token inside body
+      await axios.post(
+        'https://runmysale.com/wp-json/affiliate-subscription/v1/update_profile',
+        payload,
+        { headers: { 'Content-Type': 'application/json' }, timeout: 15000 },
+      );
+
+      console.log('[WP SYNC] Successfully synced profile for:', email);
+    } catch (err: any) {
+      console.error('[WP SYNC Error]', err.response?.data || err.message);
     }
-
-    const wpToken = wpLoginResponse.data.token;
-    const wpUserId = wpLoginResponse.data.user_id;
-
-    // 2) Prepare payload for update_profile
-    const payload: any = {
-      token: wpToken,   // Pass token in body
-      user_id: wpUserId, // Pass user_id if API expects it
-      bio: bp?.bio ?? '',
-      distance: bp?.serviceCoverageRadius ?? 0,
-      first_name: dbUser.firstName ?? '',
-      last_name: dbUser.lastName ?? '',
-      phone: dbUser.phoneNumber ?? '',
-      zip_code: (bp as any)?.zip_code ?? dbUser.zipCode ?? '',
-      country_code: (bp as any)?.country_code ?? 'US',
-      dob: dbUser.dob
-        ? (typeof dbUser.dob === 'string'
-            ? dbUser.dob
-            : new Date(dbUser.dob).toISOString().slice(0, 10))
-        : undefined,
-      password: plainPassword,
-      role: 'affiliate_member',
-      businessName: (bp as any).businessName,
-      foundingDate: (bp as any).foundingDate,
-      allowMinimumPricing:
-        (bp as any).allowMinimumPricing === true || (bp as any).allowMinimumPricing === 'yes'
-          ? 'yes'
-          : 'no',
-      sellingItemsInfo: (bp as any).sellingItemsInfo,
-      q1_age: (bp as any).q1_age?.toString(),
-      q2_selling_exp: (bp as any).q2_selling_exp,
-      q3_business_exp: (bp as any).q3_business_exp,
-      q4_honest: (bp as any).q4_honest,
-      q5_work_ethic: (bp as any).q5_work_ethic,
-      q6_criminal_history: (bp as any).q6_criminal_history,
-      q7_fun: (bp as any).q7_fun,
-      services: (bp as any).services ?? [],
-      businessImage: (bp as any).businessImage,
-      businessVideo: (bp as any).businessVideo,
-    };
-
-    Object.keys(payload).forEach((k) => {
-      if (payload[k] === undefined || payload[k] === null) delete payload[k];
-    });
-
-    // 3) Call update_profile with token inside body
-    await axios.post(
-      'https://runmysale.com/wp-json/affiliate-subscription/v1/update_profile',
-      payload,
-      { headers: { 'Content-Type': 'application/json' }, timeout: 15000 },
-    );
-
-    console.log('[WP SYNC] Successfully synced profile for:', email);
-  } catch (err: any) {
-    console.error('[WP SYNC Error]', err.response?.data || err.message);
   }
-}
 
 
 
