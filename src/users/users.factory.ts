@@ -2026,14 +2026,20 @@ async reportUser(
     }
   }
 
-  async getOwnUserData(user: User): Promise<User> {
-    try {
-      const userData = await this.usersModel.findOne({ _id: user._id }).exec();
-      const res = new UserDto(userData);
-      res['token'] = await generateToken(res);
-      return res;
-    } catch (err) {
-      throw err;
+async getOwnUserData(user: User): Promise<User> {
+  try {
+    const userData = await this.usersModel.findOne({ _id: user._id }).exec();
+    console.log(userData);
+
+    if (!userData) {
+      throw new HttpException('User not found', HttpStatus.UNAUTHORIZED);
     }
+
+    const res = new UserDto(userData);
+    res['token'] = await generateToken(res);
+    return res;
+  } catch (err) {
+    throw err;
   }
+}
 }
