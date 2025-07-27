@@ -1611,7 +1611,7 @@ private async syncAffiliateProfileToWP(user: User, bp: BusinessProfile): Promise
       country_code: 'US',
       dob: dbUser.dob ? new Date(dbUser.dob).toISOString().slice(0, 10) : '',
       password: plainPassword,
-      // role: 'affiliate_member',
+      role: role ?role: 'affiliate_member',
       businessName: bp?.businessName ?? '',
       foundingDate: bp?.foundingDate
         ? new Date(bp.foundingDate).toISOString().slice(0, 10)
