@@ -1215,7 +1215,7 @@ async deleteAffiliateProfileById(
   try {
     console.log(`[WP DELETE] Starting deletion process for user ID: ${id}`);
 
-    // 1) Fetch user
+    // 1) Fetch user from DB
     const dbUser = await this.usersModel
       .findById(id)
       .select('email passwordEncrypted')
@@ -1235,21 +1235,25 @@ async deleteAffiliateProfileById(
     const wpLoginResponse = await axios.post(
       'https://runmysale.com/wp-json/affiliate-subscription/v1/login',
       { username: email, password: plainPassword },
-      { headers: { 'Content-Type': 'application/json' }, withCredentials: true }
+      { headers: { 'Content-Type': 'application/json' } }
     );
 
     console.log(`[WP DELETE] WordPress login response:`, wpLoginResponse.data);
 
-    if (!wpLoginResponse?.headers['set-cookie']) {
+    // 3) Extract PHPSESSID from cookies
+    const cookies = wpLoginResponse.headers['set-cookie'];
+    if (!cookies || cookies.length === 0) {
       throw new BadRequestException('WordPress login failed (no PHPSESSID)');
     }
-
-    const cookies = wpLoginResponse.headers['set-cookie'];
     const phpSessionCookie =
       cookies.find((c: string) => c.startsWith('PHPSESSID=')) || '';
-    console.log(`[WP DELETE] PHPSESSID: ${phpSessionCookie.split(';')[0]}`);
+    if (!phpSessionCookie) {
+      throw new BadRequestException('PHPSESSID not found in cookies');
+    }
+    const phpSessId = phpSessionCookie.split(';')[0];
+    console.log(`[WP DELETE] PHPSESSID: ${phpSessId}`);
 
-    // 3) Delete from WordPress with secret
+    // 4) Delete from WordPress
     const deletePayload = {
       email: email,
       secret: 'MyUltraSecureSecret123',
@@ -1262,7 +1266,7 @@ async deleteAffiliateProfileById(
       {
         headers: {
           'Content-Type': 'application/json',
-          'Cookie': phpSessionCookie.split(';')[0],
+          'Cookie': phpSessId,
         },
         timeout: 10000,
       }
@@ -1270,7 +1274,7 @@ async deleteAffiliateProfileById(
 
     console.log(`[WP DELETE] WordPress deletion successful for email: ${email}`);
 
-    // 4) Delete from local DB only if WP deletion succeeds
+    // 5) Delete from local DB
     const result = await this.usersModel.deleteOne({ _id: id });
     console.log(`[WP DELETE] Local DB deletion result:`, result);
 
@@ -1291,6 +1295,7 @@ async deleteAffiliateProfileById(
     throw err;
   }
 }
+
 
 
 async deleteAffiliateProfileById2(
