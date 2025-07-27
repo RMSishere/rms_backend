@@ -1562,7 +1562,8 @@ private async syncAffiliateProfileToWP(user: User, bp: BusinessProfile): Promise
 
     const wpToken = wpLoginResponse.data.token;
 
-    // --- Map q1 - q7 specifically ---
+    // --- Map q1 - q7 from questionAnswers ---
+    console.log('[WP SYNC] questionAnswers:', bp.questionAnswers);
     const qFields: Record<string, string> = {};
     if (bp.questionAnswers && Array.isArray(bp.questionAnswers)) {
       const keys = [
@@ -1582,7 +1583,7 @@ private async syncAffiliateProfileToWP(user: User, bp: BusinessProfile): Promise
       });
     }
 
-    // 2) Prepare payload for update_profile
+    // 2) Build payload
     const payload: any = {
       token: wpToken,
       bio: bp?.bio ?? '',
@@ -1616,7 +1617,7 @@ private async syncAffiliateProfileToWP(user: User, bp: BusinessProfile): Promise
 
     console.log('[WP SYNC] Payload:', payload);
 
-    // 3) Update WP profile
+    // 3) Send to WP
     await axios.post(
       'https://runmysale.com/wp-json/affiliate-subscription/v1/update_profile',
       payload,
@@ -1628,6 +1629,7 @@ private async syncAffiliateProfileToWP(user: User, bp: BusinessProfile): Promise
     console.error('[WP SYNC Error]', err.response?.data || err.message);
   }
 }
+
 
 
 
