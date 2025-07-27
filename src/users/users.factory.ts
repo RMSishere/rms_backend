@@ -1474,7 +1474,7 @@ async createBusinessProfile(
 
     if (updatedUser?._id) {
       await this.sendWelcomeText(updatedUser);
-
+ console.log("dsadsadadsa",updatedUser);
       // 🔁 WordPress Sync (non-blocking)
       this.syncAffiliateProfileToWP(updatedUser, data).catch((e) =>
         console.error('[WP SYNC][createBusinessProfile] failed:', e?.message || e),
@@ -1517,6 +1517,7 @@ async updateBusinessProfile(
       dataToUpdate,
       user,
     )) as User;
+ console.log("dsadsadadsa",updatedUser);
 
     // 🔁 WordPress Sync (non-blocking)
     this.syncAffiliateProfileToWP(updatedUser, data).catch((e) =>
