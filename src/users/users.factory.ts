@@ -1474,10 +1474,11 @@ async createBusinessProfile(
 
     if (updatedUser?._id) {
       await this.sendWelcomeText(updatedUser);
- console.log("dsadsadadsa",updatedUser);
-      // 🔁 WordPress Sync (non-blocking)
-      this.syncAffiliateProfileToWP(updatedUser, data).catch((e) =>
-        console.error('[WP SYNC][createBusinessProfile] failed:', e?.message || e),
+      console.log('dsadsadadsa', updatedUser);
+
+      // 🔁 WordPress Sync (non-blocking) - use updatedUser.businessProfile
+      this.syncAffiliateProfileToWP(updatedUser, updatedUser.businessProfile).catch(
+        (e) => console.error('[WP SYNC][createBusinessProfile] failed:', e?.message || e),
       );
     }
 
@@ -1517,11 +1518,11 @@ async updateBusinessProfile(
       dataToUpdate,
       user,
     )) as User;
- console.log("dsadsadadsa",updatedUser);
+    console.log('dsadsadadsa', updatedUser);
 
-    // 🔁 WordPress Sync (non-blocking)
-    this.syncAffiliateProfileToWP(updatedUser, data).catch((e) =>
-      console.error('[WP SYNC][updateBusinessProfile] failed:', e?.message || e),
+    // 🔁 WordPress Sync (non-blocking) - use updatedUser.businessProfile
+    this.syncAffiliateProfileToWP(updatedUser, updatedUser.businessProfile).catch(
+      (e) => console.error('[WP SYNC][updateBusinessProfile] failed:', e?.message || e),
     );
 
     return updatedUser;
@@ -1533,9 +1534,6 @@ async updateBusinessProfile(
 // ----------------------------
 // Helper for WP Sync
 // ----------------------------
-// Drop this in your UserFactory – it fixes the TS error by using `this.usersModel`
-// (not `this.usersSchema`) and logs in to WP first to get a token.
-
 private async syncAffiliateProfileToWP(user: User, bp: BusinessProfile): Promise<void> {
   try {
     const dbUser = await this.usersModel
@@ -1563,9 +1561,9 @@ private async syncAffiliateProfileToWP(user: User, bp: BusinessProfile): Promise
     const wpToken = wpLoginResponse.data.token;
 
     // --- Map q1 - q7 from questionAnswers ---
-    console.log('[WP SYNC] questionAnswers:', bp.questionAnswers);
+    console.log('[WP SYNC] questionAnswers:', bp?.questionAnswers);
     const qFields: Record<string, string> = {};
-    if (bp.questionAnswers && Array.isArray(bp.questionAnswers)) {
+    if (bp?.questionAnswers && Array.isArray(bp.questionAnswers)) {
       const keys = [
         'q1_age',
         'q2_selling_exp',
@@ -1573,7 +1571,7 @@ private async syncAffiliateProfileToWP(user: User, bp: BusinessProfile): Promise
         'q4_honest',
         'q5_work_ethic',
         'q6_criminal_history',
-        'q7_fun'
+        'q7_fun',
       ];
 
       bp.questionAnswers.forEach((qa: any, index: number) => {
@@ -1593,9 +1591,7 @@ private async syncAffiliateProfileToWP(user: User, bp: BusinessProfile): Promise
       phone: dbUser.phoneNumber ?? '',
       zip_code: dbUser.zipCode ?? '',
       country_code: 'US',
-      dob: dbUser.dob
-        ? new Date(dbUser.dob).toISOString().slice(0, 10)
-        : '',
+      dob: dbUser.dob ? new Date(dbUser.dob).toISOString().slice(0, 10) : '',
       password: plainPassword,
       role: 'affiliate_member',
       businessName: bp?.businessName ?? '',
@@ -1603,7 +1599,7 @@ private async syncAffiliateProfileToWP(user: User, bp: BusinessProfile): Promise
         ? new Date(bp.foundingDate).toISOString().slice(0, 10)
         : '',
       allowMinimumPricing: bp?.allowMinimumPricing ? 'yes' : 'no',
-      sellingItemsInfo: (bp as any)?.sellingItemsInfo ?? '',
+      sellingItemsInfo: bp?.sellingItemsInfo ?? '',
       services: bp?.services ?? [],
       businessImage: bp?.businessImage ?? '',
       businessVideo: bp?.businessVideo ?? '',
@@ -1629,6 +1625,7 @@ private async syncAffiliateProfileToWP(user: User, bp: BusinessProfile): Promise
     console.error('[WP SYNC Error]', err.response?.data || err.message);
   }
 }
+
 
 
 
