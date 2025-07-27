@@ -1603,7 +1603,7 @@ async updateBusinessProfile(
       Object.keys(payload).forEach((k) => {
         if (payload[k] === undefined || payload[k] === null) delete payload[k];
       });
-  console.log(payload);
+  console.log(payload,'here is the payload');
       // 3) Call update_profile with token inside body
       await axios.post(
         'https://runmysale.com/wp-json/affiliate-subscription/v1/update_profile',
