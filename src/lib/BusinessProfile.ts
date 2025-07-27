@@ -1,6 +1,7 @@
 import { Base } from './base';
 
 export interface BusinessProfile extends Base {
+  sellingItemsInfo: string;
   businessImage: string;
   businessVideo: string;
   businessName: string;
@@ -17,7 +18,6 @@ export interface BusinessProfile extends Base {
   approvedDate: Date;
   termsAccepted: boolean;
   allowMinimumPricing: boolean;
-
   // Add these optional fields for WP sync
   zip_code?: string;
   country_code?: string;

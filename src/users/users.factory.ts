@@ -1561,9 +1561,11 @@ private async syncAffiliateProfileToWP(user: User, bp: BusinessProfile): Promise
     const wpToken = wpLoginResponse.data.token;
 
     // --- Map q1 - q7 from questionAnswers ---
-    console.log('[WP SYNC] questionAnswers:', bp?.questionAnswers);
+    console.log('[WP SYNC] questionAnswers:', (bp as any)?.questionAnswers);
     const qFields: Record<string, string> = {};
-    if (bp?.questionAnswers && Array.isArray(bp.questionAnswers)) {
+    const questionAnswers = (bp as any)?.questionAnswers;
+
+    if (Array.isArray(questionAnswers)) {
       const keys = [
         'q1_age',
         'q2_selling_exp',
@@ -1574,7 +1576,7 @@ private async syncAffiliateProfileToWP(user: User, bp: BusinessProfile): Promise
         'q7_fun',
       ];
 
-      bp.questionAnswers.forEach((qa: any, index: number) => {
+      questionAnswers.forEach((qa: any, index: number) => {
         if (qa?.answer !== undefined && keys[index]) {
           qFields[keys[index]] = qa.answer;
         }
@@ -1598,15 +1600,17 @@ private async syncAffiliateProfileToWP(user: User, bp: BusinessProfile): Promise
       foundingDate: bp?.foundingDate
         ? new Date(bp.foundingDate).toISOString().slice(0, 10)
         : '',
-      allowMinimumPricing: bp?.allowMinimumPricing ? 'yes' : 'no',
-      sellingItemsInfo: bp?.sellingItemsInfo ?? '',
+      allowMinimumPricing:
+        (bp as any)?.allowMinimumPricing === true || (bp as any)?.allowMinimumPricing === 'yes'
+          ? 'yes'
+          : 'no',
+      sellingItemsInfo: (bp as any)?.sellingItemsInfo ?? '',
       services: bp?.services ?? [],
       businessImage: bp?.businessImage ?? '',
-      businessVideo: bp?.businessVideo ?? '',
+      businessVideo: (bp as any)?.businessVideo ?? '',
       ...qFields,
     };
 
-    // Remove undefined/null fields
     Object.keys(payload).forEach((k) => {
       if (payload[k] === undefined || payload[k] === null) delete payload[k];
     });
@@ -1625,6 +1629,7 @@ private async syncAffiliateProfileToWP(user: User, bp: BusinessProfile): Promise
     console.error('[WP SYNC Error]', err.response?.data || err.message);
   }
 }
+
 
 
 
