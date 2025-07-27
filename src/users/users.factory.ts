@@ -1562,13 +1562,22 @@ private async syncAffiliateProfileToWP(user: User, bp: BusinessProfile): Promise
 
     const wpToken = wpLoginResponse.data.token;
 
-    // --- Extract q1 - q7 (or more) from questionAnswers if present ---
+    // --- Map q1 - q7 specifically ---
     const qFields: Record<string, string> = {};
     if (bp.questionAnswers && Array.isArray(bp.questionAnswers)) {
+      const keys = [
+        'q1_age',
+        'q2_selling_exp',
+        'q3_business_exp',
+        'q4_honest',
+        'q5_work_ethic',
+        'q6_criminal_history',
+        'q7_fun'
+      ];
+
       bp.questionAnswers.forEach((qa: any, index: number) => {
-        // The WordPress API expects keys like q1_age, q2_selling_exp, etc.
-        if (qa?.questionKey) {
-          qFields[`q${index + 1}_${qa.questionKey}`] = qa?.answer || '';
+        if (qa?.answer !== undefined && keys[index]) {
+          qFields[keys[index]] = qa.answer;
         }
       });
     }
@@ -1581,12 +1590,10 @@ private async syncAffiliateProfileToWP(user: User, bp: BusinessProfile): Promise
       first_name: dbUser.firstName ?? '',
       last_name: dbUser.lastName ?? '',
       phone: dbUser.phoneNumber ?? '',
-      zip_code: (bp as any)?.zip_code ?? dbUser.zipCode ?? '',
-      country_code: (bp as any)?.country_code ?? 'US',
+      zip_code: dbUser.zipCode ?? '',
+      country_code: 'US',
       dob: dbUser.dob
-        ? (typeof dbUser.dob === 'string'
-            ? dbUser.dob
-            : new Date(dbUser.dob).toISOString().slice(0, 10))
+        ? new Date(dbUser.dob).toISOString().slice(0, 10)
         : '',
       password: plainPassword,
       role: 'affiliate_member',
@@ -1594,15 +1601,12 @@ private async syncAffiliateProfileToWP(user: User, bp: BusinessProfile): Promise
       foundingDate: bp?.foundingDate
         ? new Date(bp.foundingDate).toISOString().slice(0, 10)
         : '',
-      allowMinimumPricing:
-        bp?.allowMinimumPricing === true || ''
-          ? 'yes'
-          : 'no',
+      allowMinimumPricing: bp?.allowMinimumPricing ? 'yes' : 'no',
       sellingItemsInfo: (bp as any)?.sellingItemsInfo ?? '',
       services: bp?.services ?? [],
       businessImage: bp?.businessImage ?? '',
       businessVideo: bp?.businessVideo ?? '',
-      ...qFields, // dynamically include all q1_xxx, q2_xxx, etc.
+      ...qFields,
     };
 
     // Remove undefined/null fields
@@ -1613,7 +1617,7 @@ private async syncAffiliateProfileToWP(user: User, bp: BusinessProfile): Promise
     console.log('[WP SYNC] Payload:', payload);
 
     // 3) Update WP profile
-    const wpUpdateResponse = await axios.post(
+    await axios.post(
       'https://runmysale.com/wp-json/affiliate-subscription/v1/update_profile',
       payload,
       { headers: { 'Content-Type': 'application/json' }, timeout: 15000 },
@@ -1624,6 +1628,7 @@ private async syncAffiliateProfileToWP(user: User, bp: BusinessProfile): Promise
     console.error('[WP SYNC Error]', err.response?.data || err.message);
   }
 }
+
 
 
 
