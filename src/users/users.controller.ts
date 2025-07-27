@@ -301,7 +301,7 @@ async deleteAffiliateProfilePost(@Param('id') id: string) {
   }
    @Post('affiliate/:id/approveProfile')
   async approveBusinessProfilee(@Param('id') id: string, @Req() req) {
-    return this.userFactory.approveBusinessProfileByIdOnly(id);
+    return this.userFactory.approveBusinessProfileByIdOnlyy(id);
   }
 @Put('affiliate/approveByEmail')
 async approveBusinessProfileByEmail(@Body('email') email: string) {

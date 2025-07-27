@@ -1611,7 +1611,6 @@ private async syncAffiliateProfileToWP(user: User, bp: BusinessProfile): Promise
       country_code: 'US',
       dob: dbUser.dob ? new Date(dbUser.dob).toISOString().slice(0, 10) : '',
       password: plainPassword,
-      role: role ?role: 'affiliate_member',
       businessName: bp?.businessName ?? '',
       foundingDate: bp?.foundingDate
         ? new Date(bp.foundingDate).toISOString().slice(0, 10)
@@ -1740,6 +1739,35 @@ console.log(wpToken,'dsdsas');
     }
 
     // 4. Update user in our database
+    const updatedUser = await this.usersModel.findOneAndUpdate(
+      { _id: id },
+      {
+        $set: {
+          'businessProfile.isApproved': true,
+          'businessProfile.approvedDate': new Date(),
+        }
+      },
+      { new: true }
+    );
+
+    if (!updatedUser) {
+      return { success: false, error: 'Failed to update user in DB' };
+    }
+
+    return { success: true, data: new UserDto(updatedUser) };
+  } catch (err) {
+    return { success: false, error: err.message || 'An unexpected error occurred' };
+  }
+}
+async approveBusinessProfileByIdOnlyy(id: string): Promise<{ success: boolean; data?: UserDto; error?: string }> {
+  try {
+    // 1. Find the user to ensure they exist
+    const user = await this.usersModel.findById(id);
+    if (!user) {
+      return { success: false, error: 'User not found' };
+    }
+
+    // 2. Update user in local database
     const updatedUser = await this.usersModel.findOneAndUpdate(
       { _id: id },
       {
