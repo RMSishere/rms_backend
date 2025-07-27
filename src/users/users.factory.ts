@@ -1208,7 +1208,7 @@ async addHelpMessage(data: HelpMessage, user: User): Promise<HelpMessage> {
   }
 }
 
-async deleteAffiliateProfileById(
+async  deleteAffiliateProfileById(
   this: any,
   id: string
 ): Promise<{ success: boolean; message: string }> {
@@ -1223,7 +1223,12 @@ async deleteAffiliateProfileById(
     console.log(`[WP DELETE] Fetched user from DB:`, dbUser);
 
     if (!dbUser || !dbUser.passwordEncrypted) {
-      throw new BadRequestException('Affiliate not found or no password stored');
+      // Nothing to delete locally, and we also can't login to WP without creds.
+      // Return 200-style success to keep the API idempotent.
+      return {
+        success: true,
+        message: 'Affiliate already deleted (no local record/password found)',
+      };
     }
 
     const email = dbUser.email.toLowerCase();
@@ -1240,7 +1245,7 @@ async deleteAffiliateProfileById(
 
     console.log(`[WP DELETE] WordPress login response:`, wpLoginResponse.data);
 
-    // 3) Extract PHPSESSID from cookies
+    // 3) Extract PHPSESSID from cookies (needed by WP delete endpoint)
     const cookies = wpLoginResponse.headers['set-cookie'];
     if (!cookies || cookies.length === 0) {
       throw new BadRequestException('WordPress login failed (no PHPSESSID)');
@@ -1255,7 +1260,7 @@ async deleteAffiliateProfileById(
 
     // 4) Delete from WordPress
     const deletePayload = {
-      email: email,
+      email,
       secret: 'MyUltraSecureSecret123',
     };
     console.log('[WP DELETE] Sending delete request with payload:', deletePayload);
@@ -1266,7 +1271,7 @@ async deleteAffiliateProfileById(
       {
         headers: {
           'Content-Type': 'application/json',
-          'Cookie': phpSessId,
+          Cookie: phpSessId,
         },
         timeout: 10000,
       }
@@ -1274,12 +1279,17 @@ async deleteAffiliateProfileById(
 
     console.log(`[WP DELETE] WordPress deletion successful for email: ${email}`);
 
-    // 5) Delete from local DB
+    // 5) Delete from local DB (idempotent)
     const result = await this.usersModel.deleteOne({ _id: id });
     console.log(`[WP DELETE] Local DB deletion result:`, result);
 
     if (result.deletedCount === 0) {
-      throw new BadRequestException('Affiliate not found or already deleted');
+      console.warn('[WP DELETE] User not found in DB (maybe already deleted)');
+      return {
+        success: true,
+        message:
+          'Affiliate profile deleted from WordPress and was already removed locally',
+      };
     }
 
     console.log(`[WP DELETE] Deletion completed successfully for user ID: ${id}`);
@@ -1295,6 +1305,7 @@ async deleteAffiliateProfileById(
     throw err;
   }
 }
+
 
 
 
