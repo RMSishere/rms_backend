@@ -77,6 +77,9 @@ function decrypt(encryptedText: string): string {
 
 @Injectable()
 export class UserFactory extends BaseFactory {
+  getUserByIdOrEmail(email: string) {
+    throw new Error('Method not implemented.');
+  }
   constructor(
     @InjectModel('users') public readonly usersModel: Model<User>,
     @InjectModel('counters') public readonly countersModel: Model<Counter>,
