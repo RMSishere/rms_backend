@@ -196,7 +196,7 @@ async getAllRequests(params: any, user: User): Promise<PaginatedData> {
 
       console.log("✅ Affiliate is subscribed to New Jobs");
 
-      const affiliate = await this.userFactory.getApprovedAffiliate({ _id: user._id }); // FIXED
+      const affiliate = await this.userFactory.getApprovedAffiliate({ _id: user._id });
       console.log("📄 Fetched affiliate profile:", affiliate);
 
       if (!affiliate || !affiliate.businessProfile) {
@@ -206,11 +206,15 @@ async getAllRequests(params: any, user: User): Promise<PaginatedData> {
 
       const { businessProfile } = affiliate;
 
-      if (businessProfile.areaServices?.length) {
+      // ✅ ZIP filter logic with fallback to user.zipCode
+      if (businessProfile.areaServices?.length && businessProfile.nearByZipCodes?.length) {
         filter['zip'] = { $in: businessProfile.nearByZipCodes };
-        console.log("📍 Applied zip filter:", filter['zip']);
+        console.log("📍 Applied zip filter from nearByZipCodes:", filter['zip']);
+      } else if (user.zipCode) {
+        filter['zip'] = user.zipCode;
+        console.warn(`⚠️ areaServices/nearByZipCodes missing, using user.zipCode instead: ${user.zipCode}`);
       } else {
-        console.warn(`⛔ No areaServices for User ID: ${user.id}`);
+        console.warn(`⛔ No zip filtering possible — no areaServices and no user.zipCode`);
         return { result: [], count: 0, skip: 0 };
       }
 
@@ -277,6 +281,7 @@ async getAllRequests(params: any, user: User): Promise<PaginatedData> {
     throw error;
   }
 }
+
 
 
 
