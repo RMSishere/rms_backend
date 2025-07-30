@@ -183,8 +183,6 @@ async getAllRequests(params: any, user: User): Promise<PaginatedData> {
     } else if (user.role === USER_ROLES.AFFILIATE || user.role === 2) {
       console.log("🔐 Affiliate role detected, verifying subscription...");
 
-      const userZipCode = String(user.zipCode || '').trim();
-
       const subscribedToNewJobs = await this.notificationSubscriptionModel.findOne({
         isActive: true,
         id: '303',
@@ -198,6 +196,10 @@ async getAllRequests(params: any, user: User): Promise<PaginatedData> {
 
       console.log("✅ Affiliate is subscribed to New Jobs");
 
+      // 🛠️ Cache zip code before user is overwritten
+      const userZipCode = String(user.zipCode || '').trim();
+      console.log("📦 Cached user zipCode:", userZipCode);
+
       const affiliate = await this.userFactory.getApprovedAffiliate({ _id: user._id });
       console.log("📄 Fetched affiliate profile:", affiliate);
 
@@ -208,6 +210,7 @@ async getAllRequests(params: any, user: User): Promise<PaginatedData> {
 
       const { businessProfile } = affiliate;
 
+      // ✅ ZIP filter logic
       if (
         Array.isArray(businessProfile.nearByZipCodes) &&
         businessProfile.nearByZipCodes.length > 0
@@ -217,11 +220,13 @@ async getAllRequests(params: any, user: User): Promise<PaginatedData> {
       } else if (userZipCode.length > 0) {
         filter['zip'] = userZipCode;
         console.warn(`⚠️ No nearByZipCodes — using user.zipCode: ${userZipCode}`);
+        console.log("📍 Applied zip filter from user.zipCode:", filter['zip']);
       } else {
         console.warn(`⛔ No zip filtering possible — missing both nearByZipCodes and user.zipCode`);
         return { result: [], count: 0, skip: 0 };
       }
 
+      // ✅ Services filter
       if (businessProfile.services?.length) {
         filter['requestType'] = { $in: businessProfile.services };
         console.log("🔧 Applied services filter:", filter['requestType']);
@@ -285,6 +290,7 @@ async getAllRequests(params: any, user: User): Promise<PaginatedData> {
     throw error;
   }
 }
+
 
 
 
