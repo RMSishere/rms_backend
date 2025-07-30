@@ -213,13 +213,17 @@ async getAllRequests(params: any, user: User): Promise<PaginatedData> {
       ) {
         filter['zip'] = { $in: businessProfile.nearByZipCodes };
         console.log("📍 Applied zip filter from nearByZipCodes:", filter['zip']);
-      } else if (Number(user.zipCode)) {
-        filter['zip'] = user.zipCode;
-        console.warn(`⚠️ No nearByZipCodes — using user.zipCode: ${user.zipCode}`);
       } else {
-        console.warn(`⛔ No zip filtering possible — missing both nearByZipCodes and user.zipCode`);
-        return { result: [], count: 0, skip: 0 };
-      }
+  const zip = String(user.zipCode || '').trim();
+  if (zip.length > 0) {
+    filter['zip'] = zip;
+    console.warn(`⚠️ No nearByZipCodes — using user.zipCode: ${zip}`);
+  } else {
+    console.warn(`⛔ No zip filtering possible — missing both nearByZipCodes and user.zipCode`);
+    return { result: [], count: 0, skip: 0 };
+  }
+}
+
 
       // ✅ Filter based on services
       if (businessProfile.services?.length) {
