@@ -215,7 +215,7 @@ async getAllRequests(params: any, user: User): Promise<PaginatedData> {
       ) {
         filter['zip'] = { $in: businessProfile.nearByZipCodes };
         console.log("📍 Applied zip filter from nearByZipCodes:", filter['zip']);
-      } else if (user.zipCode) {
+      } else if (Number(user.zipCode)) {
         filter['zip'] = user.zipCode;
         console.warn(`⚠️ No areaServices/nearByZipCodes — using user.zipCode: ${user.zipCode}`);
       } else {
