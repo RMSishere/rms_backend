@@ -141,8 +141,8 @@ constructor(
 }
 
 async getAllRequests(params: any, user: User): Promise<PaginatedData> {
-  console.log("Params:", params);
-  console.log("Current User:", user);
+  console.log("📥 Params:", params);
+  console.log("👤 Current User:", user);
 
   const skip = parseInt(params.skip) || 0;
   const filter: any = { isActive: true, status: REQUEST_STATUS.INIT };
@@ -150,18 +150,22 @@ async getAllRequests(params: any, user: User): Promise<PaginatedData> {
   try {
     if (params.requestType) {
       filter['requestType'] = { $in: params.requestType.split(',') };
+      console.log("🔍 Applied requestType filter:", filter['requestType']);
     }
 
     if (params.status) {
       const statusList = params.status.split(',');
+      console.log("📌 Status List:", statusList);
+
       if (statusList.includes('new')) {
-        filter['createdAt'] = {
-          $gte: moment().subtract(1, 'month').toISOString(),
-        };
+        const oneMonthAgo = moment().subtract(1, 'month').toISOString();
+        filter['createdAt'] = { $gte: oneMonthAgo };
+        console.log("🕒 Applied 'new' createdAt filter:", filter['createdAt']);
       }
 
       if (statusList.includes('interestedAffiliates')) {
         filter['leads'] = { $exists: true, $ne: [] };
+        console.log("👥 Applied interestedAffiliates filter");
       }
     }
 
@@ -170,12 +174,15 @@ async getAllRequests(params: any, user: User): Promise<PaginatedData> {
         $gte: moment(params.onDate, 'YYYY-MM-DD').toISOString(),
         $lt: moment(params.onDate, 'YYYY-MM-DD').add(1, 'day').toISOString(),
       };
+      console.log("📅 Applied onDate filter:", filter['createdAt']);
     }
 
     if (user.role === USER_ROLES.CLIENT || user.role === 1) {
       filter['requesterOwner'] = user._id;
+      console.log("🙋 Applied requesterOwner filter (CLIENT):", filter['requesterOwner']);
     } else if (user.role === USER_ROLES.AFFILIATE || user.role === 2) {
-      // 🚫 Check if user is subscribed to "New Jobs"
+      console.log("🔐 Affiliate role detected, verifying subscription...");
+
       const subscribedToNewJobs = await this.notificationSubscriptionModel.findOne({
         isActive: true,
         id: '303',
@@ -187,7 +194,10 @@ async getAllRequests(params: any, user: User): Promise<PaginatedData> {
         return { result: [], count: 0, skip: 0 };
       }
 
-      const affiliate = await this.userFactory.getApprovedAffiliate({ _id: user });
+      console.log("✅ Affiliate is subscribed to New Jobs");
+
+      const affiliate = await this.userFactory.getApprovedAffiliate({ _id: user._id }); // FIXED
+      console.log("📄 Fetched affiliate profile:", affiliate);
 
       if (!affiliate || !affiliate.businessProfile) {
         console.warn(`⛔ Invalid affiliate profile for User ID: ${user.id}`);
@@ -196,34 +206,36 @@ async getAllRequests(params: any, user: User): Promise<PaginatedData> {
 
       const { businessProfile } = affiliate;
 
-      // ✅ Filter by nearby zip codes
       if (businessProfile.areaServices?.length) {
         filter['zip'] = { $in: businessProfile.nearByZipCodes };
+        console.log("📍 Applied zip filter:", filter['zip']);
       } else {
+        console.warn(`⛔ No areaServices for User ID: ${user.id}`);
         return { result: [], count: 0, skip: 0 };
       }
 
-      // ✅ Filter by affiliate's offered services
       if (businessProfile.services?.length) {
         filter['requestType'] = { $in: businessProfile.services };
+        console.log("🔧 Applied services filter:", filter['requestType']);
       } else {
         console.warn(`⛔ Affiliate does not offer any services. User ID: ${user.id}`);
         return { result: [], count: 0, skip: 0 };
       }
-
     } else if (user.role !== USER_ROLES.ADMIN) {
+      console.error("🚫 Forbidden role:", user.role);
       throw new ForbiddenException();
     }
 
-    const count = await this.requestModel.countDocuments(filter);
+    console.log("📦 Final DB Filter:", JSON.stringify(filter, null, 2));
 
-    let requests = await this.requestModel
-      .find(filter)
-      .populate('requesterOwner');
+    const count = await this.requestModel.countDocuments(filter);
+    console.log("📊 Matching Request Count:", count);
+
+    let requests = await this.requestModel.find(filter).populate('requesterOwner');
+    console.log("📥 Raw Requests Fetched:", requests.length);
 
     const sevenDaysAgo = moment().subtract(7, 'days');
 
-    // Filter out requests with null requesterOwner
     requests = requests.filter((req, idx) => {
       if (!req.requesterOwner) {
         console.warn(`⛔ Skipping request with null requesterOwner. Index: ${idx}, ID: ${req._id}`);
@@ -231,6 +243,8 @@ async getAllRequests(params: any, user: User): Promise<PaginatedData> {
       }
       return true;
     });
+
+    console.log("✅ Filtered Requests With Valid Owners:", requests.length);
 
     requests = requests.sort((a, b) => {
       const aUser = new User2Dto(a.requesterOwner);
@@ -256,12 +270,14 @@ async getAllRequests(params: any, user: User): Promise<PaginatedData> {
     const paginated = requests.slice(skip, skip + paginationLimit);
     const result = paginated.map(res => new RequestDto(res));
 
+    console.log("📤 Final Paginated Result Count:", result.length);
     return { result, count, skip };
   } catch (error) {
     console.error('🔥 Error in getAllRequests:', error);
     throw error;
   }
 }
+
 
 
 
