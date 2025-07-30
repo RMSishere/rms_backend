@@ -89,6 +89,10 @@ const commonExcludeRoutes = [
     path: `${GLOBAL_PREFIX}/auth/sendText`,
     method: RequestMethod.POST,
   },
+    {
+    path: `${GLOBAL_PREFIX}/auth/checkPhone`,
+    method: RequestMethod.POST,
+  },
   {
     path: `${GLOBAL_PREFIX}/auth/affiliate/:id/deleteProfile`,
     method: RequestMethod.PUT,

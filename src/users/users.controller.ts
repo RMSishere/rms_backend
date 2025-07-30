@@ -63,6 +63,18 @@ async wpRegister(@Body() data: UserDto) {
 async wpUpdate(@Body() data: UserDto) {
   return this.userFactory.updateUser2(data);
 }
+@Post('checkPhone')
+async isPhoneVerified(@Body('phoneNumber') phoneNumber: string) {
+  if (!phoneNumber) {
+    throw new BadRequestException('Phone number is required');
+  }
+  const user = await this.usersSchema.findOne({ phoneNumber, isActive: true }).lean();
+  if (!user) {
+    return { verified: false, message: 'User not found' };
+  }
+  return { verified: !!user.isMobileVerfied };
+}
+
 
   @Post('facebook/removeUser')
   async removeFacebookUser(@Body('signed_request') signedRequest: any) {
