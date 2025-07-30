@@ -11,7 +11,7 @@ export const businessProfileSchema = new mongoose.Schema(
       {
         type: String,
         enum: [
-          'SELL',
+          ' ',
           'REMOVE',
           'MOVE',
           'PRESSURE_WASH',

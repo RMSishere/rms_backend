@@ -64,6 +64,4 @@ async getAllNotificationSubscriptions(
     throw error;
   }
 }
-
-
 }

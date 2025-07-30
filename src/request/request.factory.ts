@@ -172,9 +172,9 @@ async getAllRequests(params: any, user: User): Promise<PaginatedData> {
       };
     }
 
-    if (user.role === USER_ROLES.CLIENT) {
+    if (user.role === USER_ROLES.CLIENT || user.role === 1) {
       filter['requesterOwner'] = user._id;
-    } else if (user.role === USER_ROLES.AFFILIATE) {
+    } else if (user.role === USER_ROLES.AFFILIATE || user.role === 2) {
       // 🚫 Check if user is subscribed to "New Jobs"
       const subscribedToNewJobs = await this.notificationSubscriptionModel.findOne({
         isActive: true,
