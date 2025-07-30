@@ -50,9 +50,9 @@ export class UserController {
 
 @Post('wp-register')
 async wpRegister(@Body() data: UserDto) {
-  if (data.phoneNumber) {
-    data.isMobileVerfied = true;
-  }
+  // if (data.phoneNumber) {
+  //   data.isMobileVerfied = true;
+  // }
 
   // Use the index if needed
   console.log('Received index:', data.index);
