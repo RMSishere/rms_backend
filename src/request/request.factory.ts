@@ -206,10 +206,8 @@ async getAllRequests(params: any, user: User): Promise<PaginatedData> {
 
       const { businessProfile } = affiliate;
 
-      // ✅ ZIP filter logic: nearByZipCodes if areaServices exist, fallback to user.zipCode
+      // ✅ ZIP filter logic: prefer nearByZipCodes, fallback to user.zipCode
       if (
-        Array.isArray(businessProfile.areaServices) &&
-        businessProfile.areaServices.length > 0 &&
         Array.isArray(businessProfile.nearByZipCodes) &&
         businessProfile.nearByZipCodes.length > 0
       ) {
@@ -217,7 +215,7 @@ async getAllRequests(params: any, user: User): Promise<PaginatedData> {
         console.log("📍 Applied zip filter from nearByZipCodes:", filter['zip']);
       } else if (Number(user.zipCode)) {
         filter['zip'] = user.zipCode;
-        console.warn(`⚠️ No areaServices/nearByZipCodes — using user.zipCode: ${user.zipCode}`);
+        console.warn(`⚠️ No nearByZipCodes — using user.zipCode: ${user.zipCode}`);
       } else {
         console.warn(`⛔ No zip filtering possible — missing both nearByZipCodes and user.zipCode`);
         return { result: [], count: 0, skip: 0 };
@@ -287,6 +285,7 @@ async getAllRequests(params: any, user: User): Promise<PaginatedData> {
     throw error;
   }
 }
+
 
 
 
