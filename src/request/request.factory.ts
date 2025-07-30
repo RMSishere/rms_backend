@@ -183,6 +183,8 @@ async getAllRequests(params: any, user: User): Promise<PaginatedData> {
     } else if (user.role === USER_ROLES.AFFILIATE || user.role === 2) {
       console.log("🔐 Affiliate role detected, verifying subscription...");
 
+      const userZipCode = String(user.zipCode || '').trim();
+
       const subscribedToNewJobs = await this.notificationSubscriptionModel.findOne({
         isActive: true,
         id: '303',
@@ -205,7 +207,6 @@ async getAllRequests(params: any, user: User): Promise<PaginatedData> {
       }
 
       const { businessProfile } = affiliate;
-      const userZipCode = String(user.zipCode || '').trim();
 
       if (
         Array.isArray(businessProfile.nearByZipCodes) &&
