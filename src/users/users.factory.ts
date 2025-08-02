@@ -125,19 +125,19 @@ async addUser(data: User): Promise<User | APIMessage> {
       }
     }
 
-    if (data.phoneNumber) {
-      const userExist = await this.checkUserExist({
-        phoneNumber: data.phoneNumber,
-        role: data.role,
-      });
-      console.log('Phone check result:', userExist);
-      if (userExist) {
-        return new APIMessage(
-          'User with given phone number & role already exists!',
-          APIMessageTypes.ERROR,
-        );
-      }
-    }
+    // if (data.phoneNumber) {
+    //   const userExist = await this.checkUserExist({
+    //     phoneNumber: data.phoneNumber,
+    //     role: data.role,
+    //   });
+    //   console.log('Phone check result:', userExist);
+    //   if (userExist) {
+    //     return new APIMessage(
+    //       'User with given phone number & role already exists!',
+    //       APIMessageTypes.ERROR,
+    //     );
+    //   }
+    // }
 
     const plainPassword = data.password; // Save original password for external API
 
@@ -355,15 +355,15 @@ async addUser2(data: any): Promise<User | APIMessage> {
       }
     }
 
-    if (data.phoneNumber) {
-      const userExist = await this.checkUserExist({
-        phoneNumber: data.phoneNumber,
-        role: data.role,
-      });
-      if (userExist) {
-        return new APIMessage('User with given phone number & role already exists!', APIMessageTypes.ERROR);
-      }
-    }
+    // if (data.phoneNumber) {
+    //   const userExist = await this.checkUserExist({
+    //     phoneNumber: data.phoneNumber,
+    //     role: data.role,
+    //   });
+    //   if (userExist) {
+    //     return new APIMessage('User with given phone number & role already exists!', APIMessageTypes.ERROR);
+    //   }
+    // }
 
     const plainPassword = data.password;
 
