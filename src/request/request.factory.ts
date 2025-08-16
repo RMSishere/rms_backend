@@ -608,12 +608,14 @@ async addJobUpdate(
   }
 }
 
+// inside your factory/service
+
 async addJobAgreement(
   requestId: string,
   agreement: any,
   user: User,
 ): Promise<Request> {
-  // Helper to coerce numeric strings => numbers; leave undefined if bad
+  // Coerce numeric strings => numbers; leave undefined if bad
   const num = (v: any) => {
     if (v === '' || v === null || v === undefined) return undefined;
     const n = Number(v);
@@ -622,9 +624,12 @@ async addJobAgreement(
 
   const unwrap = (a: any) => (a && a.data ? a.data : a) || {};
 
-  // Normalize paymentWay for both legacy and new shapes
+  // Normalize paymentWay (adds "%" for DEPOSIT)
   const normalizePaymentWay = (pwRaw: any = {}) => {
-    const type = pwRaw.type || (pwRaw.deposit != null || pwRaw.completion != null ? 'DEPOSIT' : 'FULL');
+    const type =
+      pwRaw.type ||
+      (pwRaw.deposit != null || pwRaw.completion != null ? 'DEPOSIT' : 'FULL');
+
     const base: any = {
       type,
       name: pwRaw.name ?? undefined,
@@ -634,22 +639,33 @@ async addJobAgreement(
     if (type === 'DEPOSIT') {
       base.deposit = num(pwRaw.deposit) ?? 0;
       base.completion = num(pwRaw.completion) ?? 0;
+
+      // NEW: persist "%" flag (boolean)
+      // Accepts truthy values: true, "true", 1, "1", "yes", "%"
+      const rawPct = pwRaw['%'];
+      const truthy = new Set([true, 'true', 1, '1', 'yes', 'YES', '%']);
+      base['%'] = truthy.has(rawPct) ? true : !!rawPct; // fallback to boolean cast
+
+      // Optional: if client omitted "%", you could infer when values look like percentages
+      // if (base['%'] === false && base.deposit <= 100 && base.completion <= 100) {
+      //   base['%'] = true;
+      // }
     } else {
-      // FULL/other types: preserve legacy `amount` if present
+      // FULL/other legacy
       if (pwRaw.amount != null) base.amount = num(pwRaw.amount) ?? 0;
     }
+
     return base;
   };
 
   try {
     const payload = unwrap(agreement);
 
-    // plug in normalized paymentWay (if provided)
     if (payload.paymentWay) {
       payload.paymentWay = normalizePaymentWay(payload.paymentWay);
     }
 
-    // (Optional) prune UI-only flags if you don’t want them stored
+    // Trim UI-only bits
     if (Array.isArray(payload.itemServiceAreas)) {
       payload.itemServiceAreas = payload.itemServiceAreas.map((x: any) => ({
         name: x?.name,
@@ -663,11 +679,7 @@ async addJobAgreement(
     const updatedRequest = await this.requestModel.findOneAndUpdate(
       filter,
       newValue,
-      {
-        new: true,
-        runValidators: true,       // ensure deposit/completion validators run
-        setDefaultsOnInsert: true,
-      }
+      { new: true, runValidators: true, setDefaultsOnInsert: true },
     );
 
     const request = new RequestDto(updatedRequest);
@@ -696,10 +708,10 @@ async addJobAgreement(
 
     return request;
   } catch (err) {
-    // preserve HttpExceptions if you throw any elsewhere
     throw err;
   }
 }
+
 
 
   async hireAffiliate(
