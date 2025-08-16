@@ -16,7 +16,7 @@ const paymentWaySchema = new mongoose.Schema(
     completion: { type: Number },
 
     // NEW: percent flag (true => deposit/completion are percentages)
-    '%': { type: Boolean, default: false },
+    percent: { type: Boolean, default: false },
   },
   { _id: false }
 );
@@ -35,17 +35,17 @@ paymentWaySchema.pre('validate', function (next) {
       return next(new Error('paymentWay.completion must be a number for type DEPOSIT'));
     }
 
-    // If using %, ensure reasonable bounds
-    if (pw['%'] === true) {
+    // If using percent, ensure reasonable bounds
+    if (pw.percent === true) {
       if (pw.deposit < 0 || pw.deposit > 100) {
-        return next(new Error('paymentWay.deposit must be between 0 and 100 when "%" is true'));
+        return next(new Error('paymentWay.deposit must be between 0 and 100 when percent is true'));
       }
       if (pw.completion < 0 || pw.completion > 100) {
-        return next(new Error('paymentWay.completion must be between 0 and 100 when "%" is true'));
+        return next(new Error('paymentWay.completion must be between 0 and 100 when percent is true'));
       }
       // Optional strict rule:
       // if (pw.deposit + pw.completion !== 100) {
-      //   return next(new Error('When "%" is true, deposit + completion must equal 100'));
+      //   return next(new Error('When percent=true, deposit + completion must equal 100'));
       // }
     }
   }
@@ -84,7 +84,7 @@ export const requestAgreementSchema = new mongoose.Schema(
 
     itemServiceAreas: [{ name: String, note: String }],
 
-    // ⬇ supports FULL and DEPOSIT with '%'
+    // supports FULL and DEPOSIT with 'percent'
     paymentWay: paymentWaySchema,
 
     additionalPaymentTermsNotes: String,

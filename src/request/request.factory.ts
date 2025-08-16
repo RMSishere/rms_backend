@@ -609,7 +609,6 @@ async addJobUpdate(
 }
 
 // inside your factory/service
-
 async addJobAgreement(
   requestId: string,
   agreement: any,
@@ -624,7 +623,7 @@ async addJobAgreement(
 
   const unwrap = (a: any) => (a && a.data ? a.data : a) || {};
 
-  // Normalize paymentWay (adds "%" for DEPOSIT)
+  // Normalize paymentWay (now uses "percent")
   const normalizePaymentWay = (pwRaw: any = {}) => {
     const type =
       pwRaw.type ||
@@ -640,15 +639,15 @@ async addJobAgreement(
       base.deposit = num(pwRaw.deposit) ?? 0;
       base.completion = num(pwRaw.completion) ?? 0;
 
-      // NEW: persist "%" flag (boolean)
-      // Accepts truthy values: true, "true", 1, "1", "yes", "%"
-      const rawPct = pwRaw['%'];
+      // Accept both "percent" and legacy "%", but persist as "percent"
+      const rawPct =
+        pwRaw.percent !== undefined ? pwRaw.percent : pwRaw['%'];
       const truthy = new Set([true, 'true', 1, '1', 'yes', 'YES', '%']);
-      base['%'] = truthy.has(rawPct) ? true : !!rawPct; // fallback to boolean cast
+      base.percent = truthy.has(rawPct) ? true : !!rawPct;
 
-      // Optional: if client omitted "%", you could infer when values look like percentages
-      // if (base['%'] === false && base.deposit <= 100 && base.completion <= 100) {
-      //   base['%'] = true;
+      // Optional inference if omitted:
+      // if (base.percent === false && base.deposit <= 100 && base.completion <= 100) {
+      //   base.percent = true;
       // }
     } else {
       // FULL/other legacy
