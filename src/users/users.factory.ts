@@ -62,7 +62,7 @@ const key = crypto.createHash('sha256').update('your_custom_secret_key').digest(
 const inputEncoding = 'utf8';
 const emailOtpStore: Map<string, { otp: string; expiresAt: number }> = new Map();
 const outputEncoding = 'base64';
-const E164 = /^\+[1-9]\d{1,14}$/;
+const isE164 = (s: string) => /^\+[1-9]\d{7,14}$/.test(s || '');
 
 function encrypt(text: string): string {
   const cipher = crypto.createCipheriv(algorithm, key, null);
@@ -850,79 +850,75 @@ async login(
   
   
 
-async verifyVerificationCode(to: string, code: string, role?: string | number): Promise<any> {
-  // keep your input log if you want
-  console.log('verifyVerificationCode input ==>', to, code, role);
+async verifyVerificationCode(to: string, code: string, role: string): Promise<any> {
+  // Minimal input checks
+  if (!to || !code) {
+    // If you truly want generic 500 for everything, throw 500 here.
+    // Otherwise, 400 is more correct:
+    throw new BadRequestException('Invalid data');
+  }
+
+  // Email path (unchanged)
+  if (!to.startsWith('+')) {
+    const record = emailOtpStore.get(to);
+    if (!record) return new APIMessage('No verification request found', APIMessageTypes.ERROR);
+    if (Date.now() > record.expiresAt) {
+      emailOtpStore.delete(to);
+      return new APIMessage('Verification code expired', APIMessageTypes.ERROR);
+    }
+    if (record.otp !== code) {
+      return new APIMessage('Invalid verification code', APIMessageTypes.ERROR);
+    }
+    emailOtpStore.delete(to);
+
+    const user = await this.usersModel.findOne({ email: to }).exec();
+    if (!user) throw new UnauthorizedException();
+    const token = await generateUserVerificationToken(user);
+    return { token };
+  }
+
+  // Phone path
+  const cleanedTo = to.replace(/\s+/g, ''); // strip spaces
+  if (!isE164(cleanedTo)) {
+    // You can keep 500 generic if required:
+    // throw new InternalServerErrorException('Internal server error');
+    // Or return 400 to be accurate:
+    throw new BadRequestException('Invalid phone number');
+  }
 
   try {
-    if (!to || !code) {
-      throw new BadRequestException('Invalid data');
+    // Must have started verification earlier with the same Verify Service SID:
+    // await twilioVerifyService.verifications.create({ to: cleanedTo, channel: 'sms' });
+    const res = await twilioVerifyService.verificationChecks.create({ to: cleanedTo, code });
+
+    if (!res || !Object.values(TWILIO_CHANNEL).includes(res.channel)) {
+      throw new InternalServerErrorException('Internal server error');
     }
 
-    const isPhone = E164.test(to);
+    if (res.status === 'approved') {
+      const query: any = { phoneNumber: cleanedTo };
+      if (role) query.role = role;
 
-    // ---------- Email OTP branch ----------
-    if (!isPhone) {
-      const record = emailOtpStore.get(to);
-      if (!record) {
-        return new APIMessage('No verification request found', APIMessageTypes.ERROR);
-      }
-
-      if (Date.now() > record.expiresAt) {
-        emailOtpStore.delete(to);
-        return new APIMessage('Verification code expired', APIMessageTypes.ERROR);
-      }
-
-      if (record.otp !== code) {
-        return new APIMessage('Invalid verification code', APIMessageTypes.ERROR);
-      }
-
-      emailOtpStore.delete(to);
-
-      const user = await this.usersModel.findOne({ email: to }).exec();
-      if (!user) {
-        throw new UnauthorizedException();
-      }
-
+      const user = await this.usersModel.findOne(query).exec();
+      if (!user) throw new UnauthorizedException();
       const token = await generateUserVerificationToken(user);
       return { token };
     }
 
-    // ---------- Phone (Twilio Verify) branch ----------
-    let verifyRes: any;
-    try {
-      verifyRes = await twilioVerifyService.verificationChecks.create({ to, code });
-    } catch (e: any) {
-      // Log internally, but do NOT leak details to the client
-      console.error('[Twilio Verify Error]', e?.message || e);
-      throw new InternalServerErrorException(); // -> {statusCode:500,"message":"Internal server error"}
-    }
+    // Code wrong or expired; if you want generic 500 instead, swap this line
+    return new APIMessage('Verification failed', APIMessageTypes.ERROR);
+  } catch (err: any) {
+    // Keep details in server logs
+    console.error('[Twilio Verify Error]', err?.message || err);
 
-    // If Twilio responded but channel/status aren’t what we expect,
-    // treat as failed verification (don’t leak Twilio’s wording)
-    if (!verifyRes || verifyRes.status !== 'approved') {
-      return new APIMessage('Verification failed', APIMessageTypes.ERROR);
-    }
+    // If you want the client to ALWAYS see generic 500:
+    throw new InternalServerErrorException('Internal server error');
 
-    const query: any = { phoneNumber: to };
-    if (role !== undefined && role !== null && role !== '') {
-      query.role = role;
-    }
-
-    const user = await this.usersModel.findOne(query).exec();
-    if (!user) {
-      throw new UnauthorizedException();
-    }
-
-    const token = await generateUserVerificationToken(user);
-    return { token };
-  } catch (err) {
-    // If it's already an HttpException (400/401/etc), keep it.
-    if (err instanceof HttpException) {
-      throw err;
-    }
-    // Everything else returns the standard 500 payload
-    throw new InternalServerErrorException();
+    // If you’d rather map known Twilio issues to 400, use:
+    // if (String(err?.message || '').includes('Invalid parameter `To`')) {
+    //   throw new BadRequestException('Invalid phone number');
+    // }
+    // throw new InternalServerErrorException('Internal server error');
   }
 }
   

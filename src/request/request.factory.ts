@@ -608,53 +608,99 @@ async addJobUpdate(
   }
 }
 
-  async addJobAgreement(
-    requestId: string,
-    agreement: object,
-    user: User,
-  ): Promise<Request> {
-    try {
-      const filter = { id: requestId, isActive: true, 'leads.affiliate': user };
-      const newValue = { $set: { 'leads.$.agreement': agreement } };
+async addJobAgreement(
+  requestId: string,
+  agreement: any,
+  user: User,
+): Promise<Request> {
+  // Helper to coerce numeric strings => numbers; leave undefined if bad
+  const num = (v: any) => {
+    if (v === '' || v === null || v === undefined) return undefined;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : undefined;
+  };
 
-      const updatedRequest = await this.requestModel.findOneAndUpdate(
-        filter,
-        newValue,
-        { new: true },
-      );
+  const unwrap = (a: any) => (a && a.data ? a.data : a) || {};
 
-      const request = new RequestDto(updatedRequest);
+  // Normalize paymentWay for both legacy and new shapes
+  const normalizePaymentWay = (pwRaw: any = {}) => {
+    const type = pwRaw.type || (pwRaw.deposit != null || pwRaw.completion != null ? 'DEPOSIT' : 'FULL');
+    const base: any = {
+      type,
+      name: pwRaw.name ?? undefined,
+      note: pwRaw.note ?? undefined,
+    };
 
-      if (request && request.requesterOwner) {
-        let requestLabel = '';
-        if (
-          SERVICES[request.requestType] &&
-          SERVICES[request.requestType].label
-        ) {
-          requestLabel = SERVICES[request.requestType].label;
-        }
+    if (type === 'DEPOSIT') {
+      base.deposit = num(pwRaw.deposit) ?? 0;
+      base.completion = num(pwRaw.completion) ?? 0;
+    } else {
+      // FULL/other types: preserve legacy `amount` if present
+      if (pwRaw.amount != null) base.amount = num(pwRaw.amount) ?? 0;
+    }
+    return base;
+  };
 
-        await this.notificationfactory.sendNotification(
-          request.requesterOwner,
-          NOTIFICATION_TYPES.JOB_STATUS_UPDATES,
-          {
-            inApp: {
-              message: {
-                requestId: request.id,
-                title: `New Interested Affiliate - ${requestLabel}`,
-                description:
-                  'Congrats! An affiliate is interested in your service request.',
-              },
-            },
-          },
-        );
+  try {
+    const payload = unwrap(agreement);
+
+    // plug in normalized paymentWay (if provided)
+    if (payload.paymentWay) {
+      payload.paymentWay = normalizePaymentWay(payload.paymentWay);
+    }
+
+    // (Optional) prune UI-only flags if you don’t want them stored
+    if (Array.isArray(payload.itemServiceAreas)) {
+      payload.itemServiceAreas = payload.itemServiceAreas.map((x: any) => ({
+        name: x?.name,
+        note: x?.note,
+      }));
+    }
+
+    const filter = { id: requestId, isActive: true, 'leads.affiliate': user };
+    const newValue = { $set: { 'leads.$.agreement': payload } };
+
+    const updatedRequest = await this.requestModel.findOneAndUpdate(
+      filter,
+      newValue,
+      {
+        new: true,
+        runValidators: true,       // ensure deposit/completion validators run
+        setDefaultsOnInsert: true,
+      }
+    );
+
+    const request = new RequestDto(updatedRequest);
+
+    if (request && request.requesterOwner) {
+      let requestLabel = '';
+      if (SERVICES[request.requestType]?.label) {
+        requestLabel = SERVICES[request.requestType].label;
       }
 
-      return request;
-    } catch (err) {
-      throw err;
+      await this.notificationfactory.sendNotification(
+        request.requesterOwner,
+        NOTIFICATION_TYPES.JOB_STATUS_UPDATES,
+        {
+          inApp: {
+            message: {
+              requestId: request.id,
+              title: `New Interested Affiliate - ${requestLabel}`,
+              description:
+                'Congrats! An affiliate is interested in your service request.',
+            },
+          },
+        },
+      );
     }
+
+    return request;
+  } catch (err) {
+    // preserve HttpExceptions if you throw any elsewhere
+    throw err;
   }
+}
+
 
   async hireAffiliate(
     leadId: string,
