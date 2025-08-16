@@ -62,6 +62,8 @@ const key = crypto.createHash('sha256').update('your_custom_secret_key').digest(
 const inputEncoding = 'utf8';
 const emailOtpStore: Map<string, { otp: string; expiresAt: number }> = new Map();
 const outputEncoding = 'base64';
+const E164 = /^\+[1-9]\d{1,14}$/;
+
 function encrypt(text: string): string {
   const cipher = crypto.createCipheriv(algorithm, key, null);
   let encrypted = cipher.update(text, inputEncoding, outputEncoding);
@@ -848,67 +850,81 @@ async login(
   
   
 
-  async verifyVerificationCode(to: string, code: string, role: string): Promise<any> {
-    console.log('verifyVerificationCode input ==>', to, code, role);
+async verifyVerificationCode(to: string, code: string, role?: string | number): Promise<any> {
+  // keep your input log if you want
+  console.log('verifyVerificationCode input ==>', to, code, role);
+
+  try {
+    if (!to || !code) {
+      throw new BadRequestException('Invalid data');
+    }
+
+    const isPhone = E164.test(to);
+
+    // ---------- Email OTP branch ----------
+    if (!isPhone) {
+      const record = emailOtpStore.get(to);
+      if (!record) {
+        return new APIMessage('No verification request found', APIMessageTypes.ERROR);
+      }
+
+      if (Date.now() > record.expiresAt) {
+        emailOtpStore.delete(to);
+        return new APIMessage('Verification code expired', APIMessageTypes.ERROR);
+      }
+
+      if (record.otp !== code) {
+        return new APIMessage('Invalid verification code', APIMessageTypes.ERROR);
+      }
+
+      emailOtpStore.delete(to);
+
+      const user = await this.usersModel.findOne({ email: to }).exec();
+      if (!user) {
+        throw new UnauthorizedException();
+      }
+
+      const token = await generateUserVerificationToken(user);
+      return { token };
+    }
+
+    // ---------- Phone (Twilio Verify) branch ----------
+    let verifyRes: any;
     try {
-      if (!to || !code) {
-        throw new BadRequestException('Invalid Data');
-      }
-  
-      // Handle email OTP verification
-      if (!to.startsWith('+')) {
-        const record = emailOtpStore.get(to);
-        if (!record) {
-          return new APIMessage('No verification request found', APIMessageTypes.ERROR);
-        }
-  
-        if (Date.now() > record.expiresAt) {
-          emailOtpStore.delete(to);
-          return new APIMessage('Verification code expired', APIMessageTypes.ERROR);
-        }
-  
-        if (record.otp !== code) {
-          return new APIMessage('Invalid verification code', APIMessageTypes.ERROR);
-        }
-  
-        emailOtpStore.delete(to); // OTP used, remove it
-  
-        const user = await this.usersModel.findOne({ email: to }).exec();
-        if (user) {
-          const token = await generateUserVerificationToken(user);
-          return { token };
-        } else {
-          throw new UnauthorizedException();
-        }
-      }
-  
-      // Handle phone verification via Twilio
-      const res = await twilioVerifyService.verificationChecks.create({ to, code });
-  
-      if (!res || !Object.values(TWILIO_CHANNEL).includes(res.channel)) {
-        throw new InternalServerErrorException(API_MESSAGES.SERVER_ERROR);
-      }
-  
-      if (res.status === 'approved') {
-        const query: any = { phoneNumber: to };
-        if (role) {
-          query.role = role;
-        }
-  
-        const user = await this.usersModel.findOne(query).exec();
-        if (user) {
-          const token = await generateUserVerificationToken(user);
-          return { token };
-        } else {
-          throw new UnauthorizedException();
-        }
-      }
-  
+      verifyRes = await twilioVerifyService.verificationChecks.create({ to, code });
+    } catch (e: any) {
+      // Log internally, but do NOT leak details to the client
+      console.error('[Twilio Verify Error]', e?.message || e);
+      throw new InternalServerErrorException(); // -> {statusCode:500,"message":"Internal server error"}
+    }
+
+    // If Twilio responded but channel/status aren’t what we expect,
+    // treat as failed verification (don’t leak Twilio’s wording)
+    if (!verifyRes || verifyRes.status !== 'approved') {
       return new APIMessage('Verification failed', APIMessageTypes.ERROR);
-    } catch (err) {
+    }
+
+    const query: any = { phoneNumber: to };
+    if (role !== undefined && role !== null && role !== '') {
+      query.role = role;
+    }
+
+    const user = await this.usersModel.findOne(query).exec();
+    if (!user) {
+      throw new UnauthorizedException();
+    }
+
+    const token = await generateUserVerificationToken(user);
+    return { token };
+  } catch (err) {
+    // If it's already an HttpException (400/401/etc), keep it.
+    if (err instanceof HttpException) {
       throw err;
     }
+    // Everything else returns the standard 500 payload
+    throw new InternalServerErrorException();
   }
+}
   
 
   async updateUserData(
