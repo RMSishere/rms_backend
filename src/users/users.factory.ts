@@ -976,7 +976,7 @@ async verifyVerificationCode(to: string, code: string, role: string): Promise<an
           log('WP fetch dbUser start');
           const dbUser = await this.usersModel
             .findOne({ id: user.id });
-            
+
           console.log(dbUser,'dass131-0-0-0-0-0-0-0-0-0-');
           if (!dbUser) throw new Error('User not found in DB for WP password update');
           if (!dbUser.passwordEncrypted) throw new Error('Missing passwordEncrypted in DB user');
@@ -1119,67 +1119,84 @@ async autoVerifyPhoneNumber(phoneNumber: string): Promise<User | APIMessage> {
 
 
 
-  async updateSocialLoginData(
-    dataToUpdate: User | any,
-    user: User,
-  ): Promise<User | APIMessage> {
-    try {
-      const condition = { id: user.id };
-      dataToUpdate.isActive = true;
+async updateSocialLoginData(
+  dataToUpdate: Partial<User> & { password?: string },
+  user: User,
+): Promise<User | APIMessage> {
+  try {
+    const condition = { id: user.id }; // ✅ use your numeric id
+    const updatePayload: any = { ...dataToUpdate, isActive: true };
 
-      if (dataToUpdate.role === USER_ROLES.ADMIN) {
-        throw new InternalServerErrorException();
-      }
-      // if updating email
-      if (dataToUpdate.email && dataToUpdate.email !== user.email) {
-        const userExist = await this.checkUserExist({
-          email: dataToUpdate.email,
-        });
-        if (userExist) {
-          return new APIMessage(
-            'User with given email already exists!',
-            APIMessageTypes.ERROR,
-          );
-        }
-      }
-
-      // if updating phone number
-      if (
-        dataToUpdate.phoneNumber &&
-        dataToUpdate.phoneNumber !== user.phoneNumber
-      ) {
-        dataToUpdate.isMobileVerfied = false; // mark unverified new number
-        const userExist = await this.checkUserExist({
-          phoneNumber: dataToUpdate.phoneNumber,
-        });
-        if (userExist) {
-          return new APIMessage(
-            'User with given phone number already exists!',
-            APIMessageTypes.ERROR,
-          );
-        }
-      }
-      const newValue = { $set: { ...dataToUpdate } };
-      const updatedUser = await this.usersModel.findOneAndUpdate(
-        condition,
-        newValue,
-        { new: true },
-      );
-
-      const res = new UserDto(updatedUser);
-      if (
-        dataToUpdate['completingSignUp'] &&
-        updatedUser.role === USER_ROLES.CLIENT
-      ) {
-        await this.sendWelcomeText(updatedUser);
-      }
-
-      res['token'] = await generateToken(updatedUser);
-      return res;
-    } catch (err) {
-      throw err;
+    // Guard: never allow promoting to admin through this route
+    if (updatePayload.role === USER_ROLES.ADMIN) {
+      throw new InternalServerErrorException();
     }
+
+    // Email change: ensure uniqueness
+    if (updatePayload.email && updatePayload.email !== user.email) {
+      const exists = await this.checkUserExist({ email: updatePayload.email });
+      if (exists) {
+        return new APIMessage(
+          'User with given email already exists!',
+          APIMessageTypes.ERROR,
+        );
+      }
+    }
+
+    // Phone change: ensure uniqueness and mark unverified
+    if (
+      updatePayload.phoneNumber &&
+      updatePayload.phoneNumber !== user.phoneNumber
+    ) {
+      updatePayload.isMobileVerfied = false;
+      const exists = await this.checkUserExist({
+        phoneNumber: updatePayload.phoneNumber,
+      });
+      if (exists) {
+        return new APIMessage(
+          'User with given phone number already exists!',
+          APIMessageTypes.ERROR,
+        );
+      }
+    }
+
+    // ✅ If a password is supplied, persist both the bcrypt hash and your reversible copy
+    if (typeof updatePayload.password === 'string' && updatePayload.password.trim().length > 0) {
+      const plainPassword = updatePayload.password.trim();
+
+      // Store secure hash for normal login
+      updatePayload.password = await getEncryptedPassword(plainPassword);
+
+      // Store reversible copy for WP sync / legacy flows
+      updatePayload.passwordEncrypted = encrypt(plainPassword);
+    } else {
+      // Don’t overwrite existing password fields when no password was sent
+      delete updatePayload.password;
+      delete updatePayload.passwordEncrypted;
+    }
+
+    // Perform update
+    const newValue = { $set: updatePayload };
+    const updatedUser = await this.usersModel.findOneAndUpdate(
+      condition,
+      newValue,
+      { new: true },
+    );
+
+    const res = new UserDto(updatedUser);
+
+    // Optional: welcome text when completing signup as a client
+    if (dataToUpdate['completingSignUp'] && updatedUser.role === USER_ROLES.CLIENT) {
+      await this.sendWelcomeText(updatedUser);
+    }
+
+    res['token'] = await generateToken(updatedUser);
+    return res;
+  } catch (err) {
+    throw err;
   }
+}
+
 
   async checkUserExist(filter: any): Promise<boolean> {
     console.log(filter,'filter');
