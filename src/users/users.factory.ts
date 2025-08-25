@@ -975,13 +975,8 @@ async verifyVerificationCode(to: string, code: string, role: string): Promise<an
         try {
           log('WP fetch dbUser start');
           const dbUser = await this.usersModel
-            .findOne({ id: user.id }) // custom numeric id
-            .select('email passwordEncrypted');
-          log('WP fetch dbUser done', {
-            found: !!dbUser,
-            dbUserEmail: dbUser?.email,
-            hasPwdEnc: !!dbUser?.passwordEncrypted,
-          });
+            .findOne({ id: user.id });
+            
           console.log(dbUser,'dass131-0-0-0-0-0-0-0-0-0-');
           if (!dbUser) throw new Error('User not found in DB for WP password update');
           if (!dbUser.passwordEncrypted) throw new Error('Missing passwordEncrypted in DB user');
