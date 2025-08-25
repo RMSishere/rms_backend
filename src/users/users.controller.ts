@@ -148,7 +148,7 @@ async autoVerifyPhoneNumber(@Body('phoneNumber') phoneNumber: string) {
 
   @Put('socialLogin')
   async updateSocialLoginData(@Body() data, @Req() req) {
-    // return this.userFactory.updateSocialLoginData(data, req.user);
+    return this.userFactory.updateSocialLoginData(data, req.user);
   }
 
   @Put('block')
