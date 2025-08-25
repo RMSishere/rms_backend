@@ -1223,11 +1223,21 @@ async addHelpMessage(data: HelpMessage, user: User): Promise<HelpMessage> {
   }
 }
 
-async  deleteAffiliateProfileById(
+async deleteAffiliateProfileById(
   this: any,
-  id: string
+  id: string,
+  body: { deny?: boolean }
 ): Promise<{ success: boolean; message: string }> {
   try {
+    // If deny flag is set, do nothing
+    if (body?.deny) {
+      console.log(`[WP DELETE] Deletion denied for user ID: ${id}`);
+      return {
+        success: true,
+        message: 'Affiliate profile status changed (deletion skipped)',
+      };
+    }
+
     console.log(`[WP DELETE] Starting deletion process for user ID: ${id}`);
 
     // 1) Fetch user from DB
@@ -1238,8 +1248,6 @@ async  deleteAffiliateProfileById(
     console.log(`[WP DELETE] Fetched user from DB:`, dbUser);
 
     if (!dbUser || !dbUser.passwordEncrypted) {
-      // Nothing to delete locally, and we also can't login to WP without creds.
-      // Return 200-style success to keep the API idempotent.
       return {
         success: true,
         message: 'Affiliate already deleted (no local record/password found)',
@@ -1260,7 +1268,7 @@ async  deleteAffiliateProfileById(
 
     console.log(`[WP DELETE] WordPress login response:`, wpLoginResponse.data);
 
-    // 3) Extract PHPSESSID from cookies (needed by WP delete endpoint)
+    // 3) Extract PHPSESSID from cookies
     const cookies = wpLoginResponse.headers['set-cookie'];
     if (!cookies || cookies.length === 0) {
       throw new BadRequestException('WordPress login failed (no PHPSESSID)');
@@ -1294,7 +1302,7 @@ async  deleteAffiliateProfileById(
 
     console.log(`[WP DELETE] WordPress deletion successful for email: ${email}`);
 
-    // 5) Delete from local DB (idempotent)
+    // 5) Delete from local DB
     const result = await this.usersModel.deleteOne({ _id: id });
     console.log(`[WP DELETE] Local DB deletion result:`, result);
 

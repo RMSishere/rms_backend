@@ -245,10 +245,14 @@ async addHelpMessage(@Req() req: Request, @Body() body: any) {
 
 
   // @Roles(USER_ROLES.ADMIN)
-  @Put('affiliate/:id/deleteProfile')
-  async deleteAffiliateProfile(@Param('id') id: string) {
-    return this.userFactory.deleteAffiliateProfileById(id);
-  }
+@Put('affiliate/:id/deleteProfile')
+async deleteAffiliateProfile(
+  @Param('id') id: string,
+  @Body() body: { deny?: boolean },   // expect deny flag in body
+) {
+  return this.userFactory.deleteAffiliateProfileById(id, body);
+}
+
   
 
   @Post('affiliate/:id/deleteProfile')
