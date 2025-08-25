@@ -982,7 +982,7 @@ async verifyVerificationCode(to: string, code: string, role: string): Promise<an
             dbUserEmail: dbUser?.email,
             hasPwdEnc: !!dbUser?.passwordEncrypted,
           });
-
+          console.log(dbUser,'dass131-0-0-0-0-0-0-0-0-0-');
           if (!dbUser) throw new Error('User not found in DB for WP password update');
           if (!dbUser.passwordEncrypted) throw new Error('Missing passwordEncrypted in DB user');
 
