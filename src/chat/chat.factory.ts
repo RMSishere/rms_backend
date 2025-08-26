@@ -98,180 +98,249 @@ constructor(
 
   // --- inbox listing (latest per distinct sender) ---------------------------
 
-  async getAllIncomingMessages(
-    skip: number,
-    query: any,
-    me: { _id: string } | any,
-  ): Promise<PaginatedData> {
-    const log = new Logger('ChatFactory.getAllIncomingMessages');
-    const t0 = Date.now();
+async getAllIncomingMessages(
+  skip: number,
+  query: any,
+  me: { _id: string } | any,
+): Promise<PaginatedData> {
+  const log = new Logger('ChatFactory.getAllIncomingMessages');
+  const t0 = Date.now();
 
-    try {
-      const customerTypes: string[] | undefined = query.customerType
-        ? String(query.customerType).split(',').map(s => s.trim()).filter(Boolean)
-        : undefined;
-
-      const receiverObjectId = this.toObjectId(me?._id);
-
-      // resolve actual collection names (prevents $lookup collection mismatches)
-      const chatColl = this.chatModel.collection.collectionName;
-      const userColl = this.userModel.collection.collectionName;
-      const requestColl = this.requestModel.collection.collectionName;
-
-      log.debug(
-        `incoming params | skip=${skip} | customerTypes=${customerTypes?.join(',') ?? '(none)'} | receiver=${receiverObjectId}`,
-      );
-
-      let rows: any[] = [];
-      let count = 0;
-      let unreadCount = 0;
-
-      if (customerTypes && customerTypes.length === 1) {
-        // Build filter against looked-up requestData (array)
-        const secondFilter: any = {};
-        if (customerTypes.includes('active')) {
-          secondFilter.requestData = { $elemMatch: { hiredAffiliate: receiverObjectId } };
+  // Helper to stringify values (ObjectId/Date friendly)
+  const s = (v: any) =>
+    JSON.stringify(
+      v,
+      (_, val) => {
+        if (val && typeof val === 'object') {
+          if (typeof (val as any).toHexString === 'function') return (val as any).toHexString();
+          if (val._bsontype === 'ObjectID' && typeof (val as any).toString === 'function')
+            return (val as any).toString();
+          if (val instanceof Date) return val.toISOString();
         }
-        if (customerTypes.includes('potential')) {
-          secondFilter.requestData = { $elemMatch: { hiredAffiliate: null } };
-        }
+        return val;
+      },
+      2,
+    );
 
-        const pipeline: any[] = [
-          { $match: { receiver: receiverObjectId } },
-          {
-            $lookup: {
-              from: requestColl,
-              localField: 'messageFor',
-              foreignField: '_id',
-              as: 'requestData',
-            },
-          },
-          ...(Object.keys(secondFilter).length ? [{ $match: secondFilter }] : []),
-          { $sort: { createdAt: -1 } },
-          { $group: { _id: '$sender', createdAt: { $first: '$createdAt' } } },
-          {
-            $lookup: {
-              from: chatColl,
-              let: { senderId: '$_id', latestTime: '$createdAt' },
-              pipeline: [
-                {
-                  $match: {
-                    $expr: {
-                      $and: [
-                        { $eq: ['$sender', '$$senderId'] },
-                        { $eq: ['$createdAt', '$$latestTime'] },
-                      ],
-                    },
-                  },
-                },
-                {
-                  $lookup: {
-                    from: userColl,
-                    localField: 'sender',
-                    foreignField: '_id',
-                    as: 'senderData',
-                  },
-                },
-                {
-                  $lookup: {
-                    from: requestColl,
-                    localField: 'messageFor',
-                    foreignField: '_id',
-                    as: 'requestData',
-                  },
-                },
-                { $unwind: { path: '$senderData', preserveNullAndEmptyArrays: true } },
-              ],
-              as: 'latestMessageData',
-            },
-          },
-          { $unwind: '$latestMessageData' },
-          { $replaceRoot: { newRoot: '$latestMessageData' } },
-          { $sort: { createdAt: -1 } },
-          { $skip: skip },
-          { $limit: paginationLimit },
-        ];
+  const isObjectIdLike = (v: any) =>
+    v &&
+    (v._bsontype === 'ObjectID' ||
+      typeof v?.toHexString === 'function' ||
+      /^[a-f0-9]{24}$/i.test(String(v)));
 
-        rows = await this.chatModel.aggregate(pipeline);
+  try {
+    const customerTypes: string[] | undefined = query.customerType
+      ? String(query.customerType).split(',').map(s => s.trim()).filter(Boolean)
+      : undefined;
 
-        const fullCountRes = await this.chatModel.aggregate([
-          { $match: { receiver: receiverObjectId } },
-          {
-            $lookup: {
-              from: requestColl,
-              localField: 'messageFor',
-              foreignField: '_id',
-              as: 'requestData',
-            },
-          },
-          ...(Object.keys(secondFilter).length ? [{ $match: secondFilter }] : []),
-          { $group: { _id: '$sender' } },
-          { $count: 'total' },
-        ]);
-        count = fullCountRes?.[0]?.total ?? 0;
+    log.debug(`[DBG] raw me._id=${String(me?._id)} (type=${typeof me?._id})`);
 
-        const unreadRes = await this.chatModel.aggregate([
-          { $match: { receiver: receiverObjectId, read: null } },
-          {
-            $lookup: {
-              from: requestColl,
-              localField: 'messageFor',
-              foreignField: '_id',
-              as: 'requestData',
-            },
-          },
-          ...(Object.keys(secondFilter).length ? [{ $match: secondFilter }] : []),
-          { $group: { _id: '$sender' } },
-          { $count: 'total' },
-        ]);
-        unreadCount = unreadRes?.[0]?.total ?? 0;
+    const receiverObjectId = this.toObjectId(me?._id);
+    log.debug(`[DBG] receiverObjectId=${String(receiverObjectId)} | isObjectIdLike=${isObjectIdLike(receiverObjectId)}`);
 
-        // normalize for DTO
-        rows = rows.map(doc => {
-          doc.sender = doc.senderData || null;
-          doc.messageFor = doc.requestData?.[0] || null;
-          delete doc.senderData;
-          delete doc.requestData;
-          return doc;
-        });
-      } else {
-        // simple branch: filter by receiver and populate
-        const chatFilter: FilterQuery<ChatDB> = { receiver: receiverObjectId };
+    // resolve actual collection names (prevents $lookup collection mismatches)
+    const chatColl = this.chatModel.collection.collectionName;
+    const userColl = this.userModel.collection.collectionName;
+    const requestColl = this.requestModel.collection.collectionName;
 
-        count = await this.chatModel.countDocuments(chatFilter);
-        unreadCount = await this.chatModel.countDocuments({ ...chatFilter, read: null });
+    log.debug(`[DBG] collections | chat=${chatColl} | user=${userColl} | request=${requestColl}`);
+    log.debug(
+      `incoming params | skip=${skip} | customerTypes=${customerTypes?.join(',') ?? '(none)'} | receiver=${receiverObjectId}`,
+    );
 
-        rows = await this.chatModel
-          .find(chatFilter)
-          .populate({
-            path: 'sender',
-            model: this.userModel.modelName,
-            select: 'firstName lastName avatar email role',
-          })
-          .populate({ path: 'messageFor' })
-          .skip(skip)
-          .limit(paginationLimit)
-          .sort({ createdAt: -1 })
-          .lean();
+    let rows: any[] = [];
+    let count = 0;
+    let unreadCount = 0;
+
+    if (customerTypes && customerTypes.length === 1) {
+      // Build filter against looked-up requestData (array)
+      const secondFilter: any = {};
+      if (customerTypes.includes('active')) {
+        secondFilter.requestData = { $elemMatch: { hiredAffiliate: receiverObjectId } };
+      }
+      if (customerTypes.includes('potential')) {
+        secondFilter.requestData = { $elemMatch: { hiredAffiliate: null } };
       }
 
-      const result = rows.map(r => new ChatDto(r as any));
-      const t1 = Date.now();
-      log.log(
-        `success | results=${result.length} | count=${count} | unread=${unreadCount} | skip=${skip} | durationMs=${t1 - t0}`,
-      );
+      log.debug(`[DBG] secondFilter=${s(secondFilter)}`);
 
-      return { result, count, unreadCount, skip };
-    } catch (err) {
-      const t1 = Date.now();
-      const msg = err?.message || String(err);
-      new Logger('ChatFactory.getAllIncomingMessages').error(
-        `failed | durationMs=${t1 - t0} | error=${msg}`,
-        err?.stack,
-      );
-      throw err;
+      const pipeline: any[] = [
+        { $match: { receiver: receiverObjectId } },
+        {
+          $lookup: {
+            from: requestColl,
+            localField: 'messageFor',
+            foreignField: '_id',
+            as: 'requestData',
+          },
+        },
+        ...(Object.keys(secondFilter).length ? [{ $match: secondFilter }] : []),
+        { $sort: { createdAt: -1 } },
+        // latest per sender
+        { $group: { _id: '$sender', createdAt: { $first: '$createdAt' } } },
+        {
+          $lookup: {
+            from: chatColl,
+            let: { senderId: '$_id', latestTime: '$createdAt' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$sender', '$$senderId'] },
+                      { $eq: ['$createdAt', '$$latestTime'] },
+                    ],
+                  },
+                },
+              },
+              {
+                $lookup: {
+                  from: userColl,
+                  localField: 'sender',
+                  foreignField: '_id',
+                  as: 'senderData',
+                },
+              },
+              {
+                $lookup: {
+                  from: requestColl,
+                  localField: 'messageFor',
+                  foreignField: '_id',
+                  as: 'requestData',
+                },
+              },
+              { $unwind: { path: '$senderData', preserveNullAndEmptyArrays: true } },
+            ],
+            as: 'latestMessageData',
+          },
+        },
+        { $unwind: '$latestMessageData' },
+        { $replaceRoot: { newRoot: '$latestMessageData' } },
+        { $sort: { createdAt: -1 } },
+        { $skip: skip },
+        { $limit: paginationLimit },
+      ];
+
+      // Show the pipeline clearly
+      log.debug(`[DBG] aggregation pipeline:\n${s(pipeline)}`);
+
+      rows = await this.chatModel.aggregate(pipeline);
+      log.debug(`[DBG] rows.length after aggregate=${rows.length}`);
+
+      // Peek at a few senders before normalization
+      (rows.slice(0, 5) || []).forEach((doc, i) => {
+        const rawSender = doc?.sender;
+        const senderStr = rawSender ? (rawSender.toHexString?.() ?? String(rawSender)) : 'null';
+        const typeInfo = isObjectIdLike(rawSender) ? 'ObjectIdLike' : typeof rawSender;
+        const hasSenderData = !!doc?.senderData;
+        log.debug(`[DBG] sample[${i}] sender=${senderStr} (${typeInfo}) | has senderData=${hasSenderData}`);
+        // Sometimes JSON.stringify(ObjectId) is {}, so do a plain console log too:
+        console.log('[DBG] sample raw doc sender (console.log):', rawSender);
+      });
+
+      const fullCountRes = await this.chatModel.aggregate([
+        { $match: { receiver: receiverObjectId } },
+        {
+          $lookup: {
+            from: requestColl,
+            localField: 'messageFor',
+            foreignField: '_id',
+            as: 'requestData',
+          },
+        },
+        ...(Object.keys(secondFilter).length ? [{ $match: secondFilter }] : []),
+        { $group: { _id: '$sender' } },
+        { $count: 'total' },
+      ]);
+      count = fullCountRes?.[0]?.total ?? 0;
+      log.debug(`[DBG] count (distinct senders)=${count}`);
+
+      const unreadRes = await this.chatModel.aggregate([
+        { $match: { receiver: receiverObjectId, read: null } },
+        {
+          $lookup: {
+            from: requestColl,
+            localField: 'messageFor',
+            foreignField: '_id',
+            as: 'requestData',
+          },
+        },
+        ...(Object.keys(secondFilter).length ? [{ $match: secondFilter }] : []),
+        { $group: { _id: '$sender' } },
+        { $count: 'total' },
+      ]);
+      unreadCount = unreadRes?.[0]?.total ?? 0;
+      log.debug(`[DBG] unreadCount (distinct senders)=${unreadCount}`);
+
+      // normalize for DTO
+      let missingSenderData = 0;
+      let missingSenderId = 0;
+
+      rows = rows.map(doc => {
+        // Snapshot before we mutate
+        const rawSender = doc.sender;
+        if (!rawSender) missingSenderId++;
+        if (!doc.senderData) missingSenderData++;
+
+        doc.sender = doc.senderData || null;
+        doc.messageFor = doc.requestData?.[0] || null;
+        delete doc.senderData;
+        delete doc.requestData;
+        return doc;
+      });
+
+      log.debug(`[DBG] post-normalize: missingSenderId=${missingSenderId} | missingSenderData=${missingSenderData}`);
+    } else {
+      // simple branch: filter by receiver and populate
+      const chatFilter: FilterQuery<ChatDB> = { receiver: receiverObjectId };
+      log.debug(`[DBG] simple branch chatFilter=${s(chatFilter)}`);
+
+      count = await this.chatModel.countDocuments(chatFilter);
+      unreadCount = await this.chatModel.countDocuments({ ...chatFilter, read: null });
+      log.debug(`[DBG] simple branch | count=${count} | unreadCount=${unreadCount}`);
+
+      rows = await this.chatModel
+        .find(chatFilter)
+        .populate({
+          path: 'sender',
+          model: this.userModel.modelName,
+          select: 'firstName lastName avatar email role',
+        })
+        .populate({ path: 'messageFor' })
+        .skip(skip)
+        .limit(paginationLimit)
+        .sort({ createdAt: -1 })
+        .lean();
+
+      log.debug(`[DBG] simple branch rows.length=${rows.length}`);
+      (rows.slice(0, 5) || []).forEach((doc, i) => {
+        const hasSenderObj = !!doc?.sender && typeof doc.sender === 'object';
+        log.debug(`[DBG] simple sample[${i}] has sender populated object=${hasSenderObj}`);
+      });
     }
+
+    const result = rows.map(r => new ChatDto(r as any));
+    const t1 = Date.now();
+    log.log(
+      `success | results=${result.length} | count=${count} | unread=${unreadCount} | skip=${skip} | durationMs=${t1 - t0}`,
+    );
+
+    // Final sanity peek at sender presence in the DTO payload
+    const senderNulls = rows.filter(r => !r?.sender).length;
+    log.debug(`[DBG] final rows with null sender=${senderNulls}/${rows.length}`);
+
+    return { result, count, unreadCount, skip };
+  } catch (err) {
+    const t1 = Date.now();
+    const msg = err?.message || String(err);
+    new Logger('ChatFactory.getAllIncomingMessages').error(
+      `failed | durationMs=${t1 - t0} | error=${msg}`,
+      err?.stack,
+    );
+    throw err;
   }
+}
+
 
   // Optional alt impl you had; unchanged (left here if you still call it)
 
