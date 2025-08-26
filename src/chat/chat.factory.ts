@@ -480,6 +480,7 @@ export class ChatFactory extends BaseFactory {
       };
 
       const data = { read: new Date() };
+      
       const newValue = { $set: data };
 
       await this.chatModel.updateMany(condition, newValue);
