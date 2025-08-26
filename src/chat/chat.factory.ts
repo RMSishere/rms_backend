@@ -274,112 +274,191 @@ constructor(
   }
 
   // Optional alt impl you had; unchanged (left here if you still call it)
-  async getAllIncomingMessages2(
-    skip: number,
-    query: any,
-    me: { _id: string },
-  ): Promise<PaginatedData> {
-    try {
-      const customerTypes: string[] = query.customerType?.split(',');
-      let chats: any[] = [];
-      let count = 0;
-      let unreadCount = 0;
 
-      const receiverObjectId = this.toObjectId(me._id);
+async getAllIncomingMessages2(
+  skip: number,
+  query: any,
+  me: { _id: string },
+): Promise<PaginatedData> {
+  const log = new Logger('ChatFactory.getAllIncomingMessages2');
+  const t0 = Date.now();
 
-      if (customerTypes && customerTypes.length === 1) {
-        chats = await this.chatModel.aggregate([
-          { $match: { receiver: receiverObjectId } },
-          {
-            $lookup: {
-              from: 'requests',
-              localField: 'messageFor',
-              foreignField: '_id',
-              as: 'messageFor',
-            },
+  // tiny helper to redact long arrays in logs
+  const preview = (arr: any[], n = 2) =>
+    Array.isArray(arr) ? arr.slice(0, n) : arr;
+
+  try {
+    const customerTypes: string[] = query.customerType?.split(',') ?? [];
+    let chats: any[] = [];
+    let count = 0;
+    let unreadCount = 0;
+
+    const receiverObjectId = this.toObjectId(me._id);
+
+    log.debug(
+      `start | skip=${skip} | customerTypes=${customerTypes.join(',') || '(none)'} | receiver=${receiverObjectId}`,
+    );
+
+    if (customerTypes.length === 1) {
+      // --- AGGREGATION (FILTERED) ------------------------------------------
+      const pipeline: any[] = [
+        { $match: { receiver: receiverObjectId } },
+        {
+          $lookup: {
+            from: 'requests', // NOTE: collection name; ok since model name is 'request'
+            localField: 'messageFor',
+            foreignField: '_id',
+            as: 'messageFor',
           },
-          {
-            $unwind: {
-              path: '$messageFor',
-              preserveNullAndEmptyArrays: true,
-            },
+        },
+        {
+          $unwind: {
+            path: '$messageFor',
+            preserveNullAndEmptyArrays: true,
           },
-          ...(customerTypes.includes('active')
-            ? [
-                {
-                  $match: {
-                    $expr: {
-                      $eq: ['$messageFor.hiredAffiliate', receiverObjectId],
+        },
+        ...(customerTypes.includes('active')
+          ? [
+              {
+                $match: {
+                  $expr: {
+                    $eq: ['$messageFor.hiredAffiliate', receiverObjectId],
+                  },
+                },
+              },
+            ]
+          : []),
+        ...(customerTypes.includes('potential')
+          ? [
+              {
+                $match: {
+                  $or: [
+                    { messageFor: null },
+                    {
+                      $and: [
+                        { 'messageFor.hiredAffiliate': { $exists: true } },
+                        { 'messageFor.hiredAffiliate': null },
+                      ],
                     },
-                  },
+                  ],
                 },
-              ]
-            : []),
-          ...(customerTypes.includes('potential')
-            ? [
-                {
-                  $match: {
-                    $or: [
-                      { messageFor: null },
-                      {
-                        $and: [
-                          { 'messageFor.hiredAffiliate': { $exists: true } },
-                          { 'messageFor.hiredAffiliate': null },
-                        ],
-                      },
-                    ],
-                  },
-                },
-              ]
-            : []),
-          { $sort: { createdAt: -1 } },
-          {
-            $group: {
-              _id: '$sender',
-              doc: { $first: '$$ROOT' },
-            },
+              },
+            ]
+          : []),
+        { $sort: { createdAt: -1 } },
+        {
+          $group: {
+            _id: '$sender',
+            doc: { $first: '$$ROOT' },
           },
-          { $replaceRoot: { newRoot: '$doc' } },
-          {
-            $lookup: {
-              from: 'users',
-              localField: 'sender',
-              foreignField: '_id',
-              as: 'senderData',
-            },
+        },
+        { $replaceRoot: { newRoot: '$doc' } },
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'sender',
+            foreignField: '_id',
+            as: 'senderData',
           },
-          {
-            $unwind: {
-              path: '$senderData',
-              preserveNullAndEmptyArrays: true,
-            },
+        },
+        {
+          $unwind: {
+            path: '$senderData',
+            preserveNullAndEmptyArrays: true,
           },
-          { $addFields: { sender: '$senderData' } },
-          { $project: { senderData: 0 } },
-          { $sort: { createdAt: -1 } },
-          { $skip: skip },
-          { $limit: paginationLimit },
-        ]);
+        },
+        { $addFields: { sender: '$senderData' } },
+        { $project: { senderData: 0 } },
+        { $sort: { createdAt: -1 } },
+        { $skip: skip },
+        { $limit: paginationLimit },
+      ];
 
+      log.debug(`agg pipeline=${JSON.stringify(pipeline)}`);
+
+      const tAgg0 = Date.now();
+      try {
+        chats = await this.chatModel.aggregate(pipeline);
+        log.debug(
+          `agg ok | durationMs=${Date.now() - tAgg0} | rows=${chats.length} | sample=${JSON.stringify(preview(chats))}`,
+        );
+      } catch (aggErr) {
+        log.error(
+          `agg failed | durationMs=${Date.now() - tAgg0} | err=${(aggErr as any)?.message}`,
+          (aggErr as any)?.stack,
+        );
+        throw aggErr;
+      }
+
+      // --- DISTINCT SENDERS (COUNT) ----------------------------------------
+      const tCount0 = Date.now();
+      try {
         const distinctSenders = await this.chatModel.distinct('sender', {
           receiver: receiverObjectId,
         } as any);
         count = distinctSenders.length;
+        log.debug(
+          `count distinct ok | durationMs=${Date.now() - tCount0} | count=${count} | sample=${JSON.stringify(preview(distinctSenders))}`,
+        );
+      } catch (cntErr) {
+        log.error(
+          `count distinct failed | durationMs=${Date.now() - tCount0} | err=${(cntErr as any)?.message}`,
+          (cntErr as any)?.stack,
+        );
+        throw cntErr;
+      }
 
+      // --- DISTINCT UNREAD SENDERS (COUNT) ---------------------------------
+      const tUnread0 = Date.now();
+      try {
         const unreadSenders = await this.chatModel.distinct('sender', {
           receiver: receiverObjectId,
           read: null,
         } as any);
         unreadCount = unreadSenders.length;
-      } else {
-        const chatFilter: FilterQuery<ChatDB> = { receiver: receiverObjectId };
+        log.debug(
+          `unread distinct ok | durationMs=${Date.now() - tUnread0} | unread=${unreadCount} | sample=${JSON.stringify(preview(unreadSenders))}`,
+        );
+      } catch (unrErr) {
+        log.error(
+          `unread distinct failed | durationMs=${Date.now() - tUnread0} | err=${(unrErr as any)?.message}`,
+          (unrErr as any)?.stack,
+        );
+        throw unrErr;
+      }
+    } else {
+      // --- SIMPLE BRANCH ----------------------------------------------------
+      const chatFilter: FilterQuery<ChatDB> = { receiver: receiverObjectId };
+      log.debug(`simple filter=${JSON.stringify(chatFilter)}`);
 
+      const tCount0 = Date.now();
+      try {
         count = await this.chatModel.countDocuments(chatFilter);
-        unreadCount = await this.chatModel.countDocuments({
-          ...chatFilter,
-          read: null,
-        });
+        log.debug(`count ok | durationMs=${Date.now() - tCount0} | count=${count}`);
+      } catch (cntErr) {
+        log.error(
+          `count failed | durationMs=${Date.now() - tCount0} | err=${(cntErr as any)?.message}`,
+          (cntErr as any)?.stack,
+        );
+        throw cntErr;
+      }
 
+      const tUnread0 = Date.now();
+      try {
+        unreadCount = await this.chatModel.countDocuments({ ...chatFilter, read: null });
+        log.debug(
+          `unread ok | durationMs=${Date.now() - tUnread0} | unread=${unreadCount}`,
+        );
+      } catch (unrErr) {
+        log.error(
+          `unread failed | durationMs=${Date.now() - tUnread0} | err=${(unrErr as any)?.message}`,
+          (unrErr as any)?.stack,
+        );
+        throw unrErr;
+      }
+
+      const tFind0 = Date.now();
+      try {
         chats = await this.chatModel
           .find(chatFilter)
           .populate('sender')
@@ -387,14 +466,41 @@ constructor(
           .skip(skip)
           .limit(paginationLimit)
           .sort({ createdAt: -1 });
+        log.debug(
+          `find ok | durationMs=${Date.now() - tFind0} | rows=${chats.length} | sample=${JSON.stringify(preview(chats))}`,
+        );
+      } catch (findErr) {
+        log.error(
+          `find failed | durationMs=${Date.now() - tFind0} | err=${(findErr as any)?.message}`,
+          (findErr as any)?.stack,
+        );
+        throw findErr;
       }
-
-      const result = chats.map(res => new ChatDto(res));
-      return { result, count, unreadCount, skip };
-    } catch (err) {
-      throw err;
     }
+
+    // --- post-shape sanity --------------------------------------------------
+    // quick check if any sender is null after lookups/populates
+    const nullSender = chats.filter(c => !c?.sender).length;
+    if (nullSender) {
+      log.warn(`sanity | sender null count=${nullSender} / ${chats.length}`);
+      // peek at a couple of offenders
+      const offenders = chats.filter(c => !c?.sender).slice(0, 2);
+      log.warn(`sanity | offenders sample=${JSON.stringify(offenders)}`);
+    }
+
+    const result = chats.map(res => new ChatDto(res));
+
+    log.log(
+      `success | results=${result.length} | count=${count} | unread=${unreadCount} | skip=${skip} | durationMs=${Date.now() - t0}`,
+    );
+
+    return { result, count, unreadCount, skip };
+  } catch (err) {
+    const msg = (err as any)?.message || String(err);
+    log.error(`failed | durationMs=${Date.now() - t0} | error=${msg}`, (err as any)?.stack);
+    throw err;
   }
+}
 
   // --- create message (kept behavior; minimal typing/coercion) --------------
 
