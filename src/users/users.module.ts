@@ -19,7 +19,7 @@ import { NotificationSubscriptioneModule } from 'src/notificationSubscription/no
   controllers: [UserController],
   providers: [UserFactory],
   exports: [
-    MongooseModule.forFeature([{ name: 'users', schema: usersSchema }]),
+    MongooseModule, // ✅ export the module so @InjectModel('users') works in other modules
     UserFactory,
   ],
 })

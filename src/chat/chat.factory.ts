@@ -27,15 +27,17 @@ import { ChatDB } from './chat.types';
 export class ChatFactory extends BaseFactory {
   public chat: Chat[] = [];
 
-  constructor(
-    @InjectModel('chat') public readonly chatModel: Model<ChatDB>,
-    @InjectModel('counters') public readonly countersModel: Model<Counter>,
-    @InjectModel('users') public readonly userModel: Model<User>,
-    @InjectModel('requests') public readonly requestModel: Model<any>, // or your Request interface
-    public notificationfactory: NotificationFactory,
-  ) {
-    super(countersModel);
-  }
+// chat.factory.ts - constructor ONLY
+constructor(
+  @InjectModel('chat') public readonly chatModel: Model<ChatDB>,
+  @InjectModel('counters') public readonly countersModel: Model<Counter>,
+  @InjectModel('users') public readonly userModel: Model<User>,
+  @InjectModel('request') public readonly requestModel: Model<any>, // <-- singular
+  public notificationfactory: NotificationFactory,
+) {
+  super(countersModel);
+}
+
 
   // --- helpers --------------------------------------------------------------
 
@@ -480,7 +482,7 @@ export class ChatFactory extends BaseFactory {
       };
 
       const data = { read: new Date() };
-      
+
       const newValue = { $set: data };
 
       await this.chatModel.updateMany(condition, newValue);

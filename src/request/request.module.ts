@@ -1,3 +1,4 @@
+// request.module.ts
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AppointmentModule } from 'src/appointment/appointment.module';
@@ -19,14 +20,13 @@ import { NotificationSubscriptioneModule } from 'src/notificationSubscription/no
     JobReviewModule,
     UsersModule,
     ScheduleJobsModule,
-        NotificationSubscriptioneModule, // ✅ <-- Add this line
-
-  ],
-  exports: [
-    MongooseModule.forFeature([{ name: 'request', schema: requestSchema }]),
-    RequestFactory,
+    NotificationSubscriptioneModule,
   ],
   controllers: [RequestController],
-  providers: [RequestFactory],
+  providers: [RequestFactory, ScheduleFactory],
+  exports: [
+    MongooseModule,   // ✅ export the module so @InjectModel('request') works elsewhere
+    RequestFactory,
+  ],
 })
 export class RequestModule {}
