@@ -77,6 +77,10 @@ const commonExcludeRoutes = [
     path: `${GLOBAL_PREFIX}/auth/affiliate`,
     method: RequestMethod.GET,
   },
+   {
+    path: `${GLOBAL_PREFIX}/chat/incoming`,
+    method: RequestMethod.GET,
+  },
   {
     path: `${GLOBAL_PREFIX}/auth/affiliate/:id/approveProfile`,
     method: RequestMethod.PUT,
@@ -120,6 +124,10 @@ const commonExcludeRoutes = [
   // },
     {
     path: `${GLOBAL_PREFIX}/chat/incomingg`,
+    method: RequestMethod.POST,
+  },
+     {
+    path: `${GLOBAL_PREFIX}/chat/incoming3`,
     method: RequestMethod.POST,
   },
    {
