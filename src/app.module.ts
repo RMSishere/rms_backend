@@ -101,6 +101,10 @@ const commonExcludeRoutes = [
     path: `${GLOBAL_PREFIX}/auth/affiliate/:id/deleteProfile`,
     method: RequestMethod.PUT,
   },
+   {
+    path: `${GLOBAL_PREFIX}/auth/affiliate/:id/deny`,
+    method: RequestMethod.PUT,
+  },
   {
     path: `${GLOBAL_PREFIX}/auth/affiliate/:id/deleteProfile`,
     method: RequestMethod.POST,
