@@ -1261,11 +1261,11 @@ async setAffiliateStatusByEmail(
 async deleteAffiliateProfileById(
   this: any,
   id: string,
-  deny:boolean,
+  deny: boolean,
 ): Promise<{ success: boolean; message: string }> {
   try {
-    console.log(deny);
-    const isDenied =deny === true;
+    console.log(deny); // will be true/false now
+    const isDenied = deny === true;
 
     const userDoc = await this.usersModel.findById(id).select('email').lean();
     if (!userDoc) {
@@ -1273,7 +1273,6 @@ async deleteAffiliateProfileById(
     }
 
     if (isDenied) {
-      // mark denied only
       await this.usersModel.findByIdAndUpdate(
         id,
         {
@@ -1286,19 +1285,29 @@ async deleteAffiliateProfileById(
         { new: true }
       );
 
-      // notify WP (best-effort)
       try {
         await axios.post(
           'https://runmysale.com/wp-json/wpus/v1/user/status',
-          { email: (userDoc.email || '').toLowerCase(), status: 'denied', reason: 'Documents verified' },
-          { headers: { 'Content-Type': 'application/json', 'X-App-Key': 'XAPP_KLP78AAG3KQM29CULPAK' }, timeout: 10000 }
+          {
+            email: (userDoc.email || '').toLowerCase(),
+            status: 'denied',
+            reason: 'Documents verified',
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'X-App-Key': 'XAPP_KLP78AAG3KQM29CULPAK',
+            },
+            timeout: 10000,
+          }
         );
-      } catch (e) { console.error('[WP STATUS] Failed:', e?.response?.data || e?.message || e); }
+      } catch (e) {
+        console.error('[WP STATUS] Failed:', e?.response?.data || e?.message || e);
+      }
 
       return { success: true, message: 'Affiliate status set to DENIED (no deletion)' };
     }
 
-    // If deny not provided, treat as “remove access”, not hard-delete:
     await this.usersModel.findByIdAndUpdate(
       id,
       {
@@ -1311,15 +1320,13 @@ async deleteAffiliateProfileById(
       { new: true }
     );
 
-    // Optionally notify WP that the user is disabled/suspended instead of deleting.
-    // await axios.post(... status: 'pending' | 'disabled' ...)
-
     return { success: true, message: 'Affiliate access disabled (no local deletion)' };
   } catch (err: any) {
     console.error('[deleteAffiliateProfileById] Error:', err.response?.data || err.message);
     throw err;
   }
 }
+
 
 
 

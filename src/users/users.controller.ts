@@ -252,14 +252,21 @@ async addHelpMessage(@Req() req: Request, @Body() body: any) {
 
 
 
-  // @Roles(USER_ROLES.ADMIN)
 @Put('affiliate/:id/deleteProfile')
 async deleteAffiliateProfile(
   @Param('id') id: string,
-  @Body('deny') deny:  boolean, // allow "true" as string too
+  @Body() body: any, // grab the whole payload
 ) {
-  return this.userFactory.deleteAffiliateProfileById(id, deny);
+  // accept { "deny": true } OR { "deny": "true" } and ignore wrappers like { body: { deny: ... } }
+  const deny =
+    body?.deny === true ||
+    body?.deny === 'true' ||
+    body?.body?.deny === true ||
+    body?.body?.deny === 'true';
+
+  return this.userFactory.deleteAffiliateProfileById(id, !!deny);
 }
+
 
 
   
