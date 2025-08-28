@@ -1,9 +1,11 @@
+// src/lib/user.ts
+
 import { Device } from 'src/util/pushNotification';
 import { Base } from './base';
 import { BusinessProfile } from './BusinessProfile';
 import { NotificationSubscription } from './NotificationSubscription';
 
-// Subscription interface
+// Subscription interface (unchanged)
 interface Subscription {
   subscriptionId?: string;
   customerId?: string;
@@ -61,4 +63,7 @@ export interface User extends Base {
   bio?: string;
   address?: string;
   distance?: number;
+
+  // ✅ NEW: DB enum (PENDING | APPROVED | DENIED)
+  affiliateStatus?: 'PENDING' | 'APPROVED' | 'DENIED';
 }

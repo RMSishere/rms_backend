@@ -1257,6 +1257,7 @@ async setAffiliateStatusByEmail(
   }
 
 
+
 async deleteAffiliateProfileById(
   this: any,
   id: string,
@@ -1267,8 +1268,14 @@ async deleteAffiliateProfileById(
     const isDenied = body?.deny === true || body?.deny === 'true';
 
     if (isDenied) {
-      // ✅ Update affiliateStatus to DENIED and mirror legacy flags
-      const updated = await this.usersModel.findByIdAndUpdate(
+      // Fetch user email for WP status call
+      const userDoc = await this.usersModel.findById(id).select('email').lean();
+      if (!userDoc) {
+        return { success: false, message: 'User not found; status not updated' };
+      }
+
+      // 1) Update local status to DENIED and mirror legacy flags
+      await this.usersModel.findByIdAndUpdate(
         id,
         {
           $set: {
@@ -1280,17 +1287,32 @@ async deleteAffiliateProfileById(
         { new: true }
       );
 
-      if (!updated) {
-        return {
-          success: false,
-          message: 'User not found; status not updated',
-        };
+      // 2) Notify WordPress about the status change
+      try {
+        await axios.post(
+          'https://runmysale.com/wp-json/wpus/v1/user/status',
+          {
+            email: (userDoc.email || '').toLowerCase(),
+            status: 'denied',
+            reason: 'Documents verified', // fixed reason per your curl
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'X-App-Key': 'XAPP_KLP78AAG3KQM29CULPAK',
+            },
+            timeout: 10000,
+          }
+        );
+      } catch (wpErr: any) {
+        console.error('[WP STATUS] Failed to update WP user status:', wpErr?.response?.data || wpErr?.message || wpErr);
+        // Do not fail the whole request if WP call fails
       }
 
       console.log(`[WP DELETE] Deletion denied for user ID: ${id}; status set to DENIED`);
       return {
         success: true,
-        message: 'Affiliate status set to DENIED (deletion skipped)',
+        message: 'Affiliate status set to DENIED (deletion skipped, WP notified)',
       };
     }
 
@@ -1305,7 +1327,6 @@ async deleteAffiliateProfileById(
     console.log(`[WP DELETE] Fetched user from DB:`, dbUser);
 
     if (!dbUser || !dbUser.passwordEncrypted) {
-      // still remove local doc if present, but here we keep behavior:
       return {
         success: true,
         message: 'Affiliate already deleted (no local record/password found)',
@@ -1340,10 +1361,7 @@ async deleteAffiliateProfileById(
     console.log(`[WP DELETE] PHPSESSID: ${phpSessId}`);
 
     // 4) Delete from WordPress
-    const deletePayload = {
-      email,
-      secret: 'MyUltraSecureSecret123',
-    };
+    const deletePayload = { email, secret: 'MyUltraSecureSecret123' };
     console.log('[WP DELETE] Sending delete request with payload:', deletePayload);
 
     await axios.post(
@@ -1386,6 +1404,7 @@ async deleteAffiliateProfileById(
     throw err;
   }
 }
+
 
 
 
@@ -1784,50 +1803,28 @@ private async syncAffiliateProfileToWP(user: User, bp: BusinessProfile): Promise
   }
 // adjust import as needed
   
-async approveBusinessProfileByIdOnly(id: string): Promise<{ success: boolean; data?: UserDto; error?: string }> {
+async approveBusinessProfileByIdOnly(
+  id: string
+): Promise<{ success: boolean; data?: UserDto; error?: string }> {
   try {
-    // 1. Find the user first to get username & password for wordpress login
-    const user = await this.usersModel.findById(id).select('email passwordEncrypted');
-    if (!user) {
+    // 1) Find user (need email for WP status API)
+    const user = await this.usersModel.findById(id).select('email');
+    if (!user || !user.email) {
       return { success: false, error: 'User not found' };
     }
 
-    const plainPassword = decrypt(user.passwordEncrypted);
+    const email = String(user.email).toLowerCase();
+    const now = new Date();
 
-    // 2. Login to WordPress API
-    const wpLoginResponse = await Axios.post("https://runmysale.com/wp-json/affiliate-subscription/v1/login", {
-      username: user.email,
-      password: plainPassword
-    });
-    console.log("hello",wpLoginResponse);
-// console.log(wpLoginResponse);
-if (!wpLoginResponse.data || !wpLoginResponse.data.token) {
-  return { success: false, error: 'WordPress login failed - token missing' };
-}
-
-    const wpToken = wpLoginResponse.data.token;
-console.log(wpToken,'dsdsas');
-    // 3. Update profile on WordPress
-    const wpUpdateResponse = await axios.post(
-      'https://runmysale.com/wp-json/affiliate-subscription/v1/update_profile',
-      {
-        token: wpToken,
-        role: 'affiliate_member',
-      }
-    );
-
-    if (!wpUpdateResponse.data.success) {
-      return { success: false, error: 'WordPress profile update failed' };
-    }
-
-    // 4. Update user in our database
+    // 2) Update local DB first
     const updatedUser = await this.usersModel.findOneAndUpdate(
       { _id: id },
       {
         $set: {
+          affiliateStatus: 'APPROVED',
           'businessProfile.isApproved': true,
-          'businessProfile.approvedDate': new Date(),
-        }
+          'businessProfile.approvedDate': now,
+        },
       },
       { new: true }
     );
@@ -1836,8 +1833,33 @@ console.log(wpToken,'dsdsas');
       return { success: false, error: 'Failed to update user in DB' };
     }
 
+    // 3) Notify WordPress user-status API (no token login, just X-App-Key)
+    try {
+      await axios.post(
+        'https://runmysale.com/wp-json/wpus/v1/user/status',
+        {
+          email,
+          status: 'approved',
+          reason: 'Approved by admin',
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-App-Key': 'XAPP_KLP78AAG3KQM29CULPAK',
+          },
+          timeout: 10000,
+        }
+      );
+    } catch (wpErr: any) {
+      // Log and continue; local DB already reflects the approved state
+      console.error(
+        '[WP STATUS] Failed to update WP user status (approve):',
+        wpErr?.response?.data || wpErr?.message || wpErr
+      );
+    }
+
     return { success: true, data: new UserDto(updatedUser) };
-  } catch (err) {
+  } catch (err: any) {
     return { success: false, error: err.message || 'An unexpected error occurred' };
   }
 }
@@ -2018,41 +2040,84 @@ async approveBusinessProfileByIdOnlyy(id: string): Promise<{ success: boolean; d
     }
   }
 
-  async getAllAffiliates(params: any): Promise<PaginatedData> {
-    const skip = parseInt(params.skip) || 0;
-    const filter = { isActive: true, role: USER_ROLES.AFFILIATE };
+async getAllAffiliates(params: any): Promise<PaginatedData> {
+  const skip = parseInt(params.skip, 10) || 0;
+  const limit = paginationLimit; // keep your existing constant
+  const filter: any = { isActive: true, role: USER_ROLES.AFFILIATE };
 
-    try {
-      if (params.onDate) {
-        filter['createdAt'] = {
-          $gte: moment(params.onDate, 'YYYY-MM-DD').toISOString(),
-          $lt: moment(params.onDate, 'YYYY-MM-DD')
-            .add(1, 'day')
-            .toISOString(),
-        };
-      }
-
-      if (params.zipCode) {
-        filter['businessProfile.nearByZipCodes'] = params.zipCode;
-      }
-
-      const count = await this.usersModel.countDocuments(filter);
-
-      const users = await this.usersModel
-        .find(filter)
-        .skip(skip)
-        .limit(paginationLimit)
-        .sort({ createdAt: 'desc' });
-
-      const result = users.map(res => new UserDto(res));
-
-      const res = { result, count, skip };
-
-      return res;
-    } catch (error) {
-      throw error;
+  try {
+    // Date filter (YYYY-MM-DD)
+    if (params.onDate) {
+      filter['createdAt'] = {
+        $gte: moment(params.onDate, 'YYYY-MM-DD').toISOString(),
+        $lt: moment(params.onDate, 'YYYY-MM-DD').add(1, 'day').toISOString(),
+      };
     }
+
+    // Zip filter (nearby coverage)
+    if (params.zipCode) {
+      filter['businessProfile.nearByZipCodes'] = params.zipCode;
+    }
+
+    // NEW: status filter (pending | approved | rejected)
+    if (params.status) {
+      const status = String(params.status).toLowerCase();
+      if (status === 'approved') {
+        // Back-compat: either explicit APPROVED, or legacy flag true
+        filter.$or = [
+          { affiliateStatus: 'APPROVED' },
+          { 'businessProfile.isApproved': true },
+        ];
+      } else if (status === 'rejected' || status === 'denied') {
+        filter.affiliateStatus = 'DENIED';
+      } else if (status === 'pending') {
+        // Pending or not yet migrated docs (no affiliateStatus field)
+        filter.$or = [
+          { affiliateStatus: 'PENDING' },
+          { affiliateStatus: { $exists: false } },
+        ];
+      }
+      // If an unknown status is provided, we ignore it to avoid breaking queries.
+    }
+
+    // Optional: simple text search over name/email (kept minimal)
+    if (params.search) {
+      const q = String(params.search).trim();
+      if (q) {
+        filter.$and = (filter.$and || []).concat([
+          {
+            $or: [
+              { firstName: { $regex: q, $options: 'i' } },
+              { lastName: { $regex: q, $options: 'i' } },
+              { email: { $regex: q, $options: 'i' } },
+              { phoneNumber: { $regex: q, $options: 'i' } },
+            ],
+          },
+        ]);
+      }
+    }
+
+    // Sorting (defaults to newest first)
+    const sortBy = params.sortBy || 'createdAt';
+    const sortDir = params.sortDir === 'asc' ? 1 : -1;
+    const sort = { [sortBy]: sortDir };
+
+    const count = await this.usersModel.countDocuments(filter);
+
+    const users = await this.usersModel
+      .find(filter)
+      .skip(skip)
+      .limit(limit)
+      .sort(sort);
+
+    const result = users.map((u) => new UserDto(u));
+
+    return { result, count, skip };
+  } catch (error) {
+    throw error;
   }
+}
+
 
   async blockUser(
     userId: string,

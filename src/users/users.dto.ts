@@ -1,3 +1,5 @@
+// src/users/users.dto.ts
+
 import { BusinessProfile, NotificationSubscription } from 'src/lib';
 import { Device } from 'src/util/pushNotification';
 import { BaseDto } from '../lib/base.dto';
@@ -57,7 +59,7 @@ export class UserDto extends BaseDto implements User {
     this.blockedUsers = user.blockedUsers;
     this.deletedAt = user.deletedAt;
     this.facebookProvider = user.facebookProvider;
-    //this.appleProvider = user.appleProvider;
+    // this.appleProvider = user.appleProvider;
     this.wordpressProvider = user.wordpressProvider;
     this.dob = user.dob;
     this.index = user.index;
@@ -65,6 +67,17 @@ export class UserDto extends BaseDto implements User {
     this.address = user.address;
     this.distance = user.distance;
     this.bio = user.bio;
+
+    // ✅ NEW: copy DB enum
+    this.affiliateStatus = user.affiliateStatus;
+
+    // ✅ NEW: friendly status for clients
+    this.status =
+      this.affiliateStatus === 'APPROVED'
+        ? 'approved'
+        : this.affiliateStatus === 'DENIED'
+        ? 'rejected'
+        : 'pending';
   }
 
   firstName: string;
@@ -87,20 +100,18 @@ export class UserDto extends BaseDto implements User {
   notificationSubscriptions: NotificationSubscription[];
   blockedUsers: string[];
   deletedAt: Date;
-  facebookProvider: {
-    id: string;
-    token: string;
-  };
-  wordpressProvider: {
-    id: string;
-    token: string;
-  };
+  facebookProvider: { id: string; token: string };
+  wordpressProvider: { id: string; token: string };
   dob: Date;
   index?: number;
   firsttime?: number;
   address?: string;
   distance?: number;
   bio?: string;
+
+  // ✅ NEW fields in DTO
+  affiliateStatus?: 'PENDING' | 'APPROVED' | 'DENIED';
+  status?: 'pending' | 'approved' | 'rejected';
 }
 
 export class User2Dto extends UserDto {
@@ -110,6 +121,5 @@ export class User2Dto extends UserDto {
       ? new SubscriptionDto(user.subscription)
       : undefined;
   }
-
   subscription?: SubscriptionDto;
 }
