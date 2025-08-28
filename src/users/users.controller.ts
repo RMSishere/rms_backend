@@ -263,6 +263,7 @@ async deleteAffiliateProfile(
     body?.deny === 'true' ||
     body?.body?.deny === true ||
     body?.body?.deny === 'true';
+  console.log(deny);
 
   return this.userFactory.deleteAffiliateProfileById(id, !!deny);
 }
