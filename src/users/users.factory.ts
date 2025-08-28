@@ -1222,6 +1222,40 @@ async addHelpMessage(data: HelpMessage, user: User): Promise<HelpMessage> {
     );
   }
 }
+// users.factory.ts
+async setAffiliateStatusByEmail(
+    email: string,
+    status: 'approve' | 'deny',
+  ): Promise<{ success: boolean; data?: UserDto; error?: string }> {
+    try {
+      if (!email || !status) {
+        return { success: false, error: 'Email and status are required' };
+      }
+
+      const normalizedEmail = email.trim().toLowerCase();
+      const user = await this.usersModel.findOne({ email: normalizedEmail });
+      if (!user) return { success: false, error: 'User not found' };
+
+      const isApprove = status.toLowerCase() === 'approve';
+
+      const update: any = {
+        affiliateStatus: isApprove ? 'APPROVED' : 'DENIED',
+        'businessProfile.isApproved': isApprove,
+        'businessProfile.approvedDate': isApprove ? new Date() : null,
+      };
+
+      const updatedUser = await this.usersModel.findOneAndUpdate(
+        { _id: user._id },
+        { $set: update },
+        { new: true },
+      );
+
+      return { success: true, data: new UserDto(updatedUser) };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Unexpected error' };
+    }
+  }
+
 
 async deleteAffiliateProfileById(
   this: any,

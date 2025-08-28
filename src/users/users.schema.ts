@@ -10,18 +10,28 @@ export const usersSchema = new mongoose.Schema(
     lastName: { type: String, default: '' },
     avatar: { type: String },
     dob: { type: Date },
-    email: { type: String, trim: true,  sparse: true },
-    phoneNumber: { type: String, trim: true,  sparse: true },
+    email: { type: String, trim: true, sparse: true },
+    phoneNumber: { type: String, trim: true, sparse: true },
     password: { type: String, default: null }, // TODO: make select: false
     zipCode: { type: String },
     passwordEncrypted: { type: String, default: null },
     role: { type: Number, default: USER_ROLES.CLIENT },
+
     businessProfile: businessProfileSchema,
+
+    // ✅ Single status field (no audit/meta)
+    affiliateStatus: {
+      type: String,
+      enum: ['PENDING', 'APPROVED', 'DENIED'],
+      default: 'PENDING',
+      index: true,
+    },
+
     isMobileVerfied: { type: Boolean, default: false },
     isEmailVerified: { type: Boolean, default: false },
     addedMiscInfo: { type: Boolean, default: false },
     isActive: { type: Boolean, default: true },
-    
+
     countryCode: { type: String, default: '' },
     callingCode: { type: String, default: '' },
     isSocialLogin: { type: Boolean, default: false },
@@ -30,14 +40,12 @@ export const usersSchema = new mongoose.Schema(
         id: String,
         token: String,
       },
-      // select: false,
     },
     appleProvider: {
       type: {
-          id: String,
-          token: String,
+        id: String,
+        token: String,
       },
-      // select: false,
     },
     wordpressProvider: {
       type: {
@@ -53,9 +61,9 @@ export const usersSchema = new mongoose.Schema(
     ],
     notificationSubscriptions: {
       type: [notificationSubscriptionSchema],
-      default: undefined, // makes the field optional
+      default: undefined,
     },
-        receiveMailForChat: { type: Boolean, default: false },
+    receiveMailForChat: { type: Boolean, default: false },
     termsAccepted: { type: Boolean, default: false, select: false },
     createdBy: { type: String, default: null },
     updatedBy: { type: String, default: null },
@@ -75,9 +83,6 @@ export const usersSchema = new mongoose.Schema(
       pitchReviewsUsed: { type: Number, default: 0 },
       lastReset: { type: Date },
     },
-    
   },
-  {
-    timestamps: true,
-  },
+  { timestamps: true },
 );

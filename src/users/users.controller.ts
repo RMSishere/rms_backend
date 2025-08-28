@@ -47,6 +47,14 @@ export class UserController {
     return this.userFactory.addUser(data);
   }
 
+// users.controller.ts
+@Post('affiliate/status')
+async setAffiliateStatus(
+  @Body('email') email: string,
+  @Body('status') status: 'approve' | 'deny'
+) {
+  return this.userFactory.setAffiliateStatusByEmail(email, status);
+}
 
 @Post('wp-register')
 async wpRegister(@Body() data: UserDto) {
