@@ -323,6 +323,10 @@ async deleteAffiliateProfile(
 }
 
 
+@Put('affiliate/:id/deny')
+async denyAffiliateProfile(@Param('id') id: string) {
+  return this.userFactory.denyAffiliateById(id);
+}
 
   
 

@@ -1405,6 +1405,59 @@ async deleteAffiliateProfileById(
   }
 }
 
+async denyAffiliateById(
+  this: any,
+  id: string
+): Promise<{ success: boolean; message: string }> {
+  try {
+    const userDoc = await this.usersModel.findById(id).select('email').lean();
+    if (!userDoc) {
+      return { success: false, message: 'User not found; status not updated' };
+    }
+
+    // 1) Update local DB
+    await this.usersModel.findByIdAndUpdate(
+      id,
+      {
+        $set: {
+          affiliateStatus: 'DENIED',
+          'businessProfile.isApproved': false,
+          'businessProfile.approvedDate': null,
+        },
+      },
+      { new: true }
+    );
+
+    // 2) Notify WordPress (best-effort)
+    try {
+      await axios.post(
+        'https://runmysale.com/wp-json/wpus/v1/user/status',
+        {
+          email: (userDoc.email || '').toLowerCase(),
+          status: 'denied',
+          reason: 'Documents verified',
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-App-Key': 'XAPP_KLP78AAG3KQM29CULPAK',
+          },
+          timeout: 10000,
+        }
+      );
+    } catch (wpErr: any) {
+      console.error(
+        '[WP STATUS] Failed to update WP user status:',
+        wpErr?.response?.data || wpErr?.message || wpErr
+      );
+    }
+
+    return { success: true, message: 'Affiliate status set to DENIED' };
+  } catch (err: any) {
+    console.error('[denyAffiliateById] Error:', err.response?.data || err.message);
+    throw err;
+  }
+}
 
 
 
