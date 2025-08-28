@@ -256,10 +256,11 @@ async addHelpMessage(@Req() req: Request, @Body() body: any) {
 @Put('affiliate/:id/deleteProfile')
 async deleteAffiliateProfile(
   @Param('id') id: string,
-  @Body() body: { deny?: boolean },   // expect deny flag in body
+  @Body() body: { deny?: boolean | string }, // allow "true" as string too
 ) {
   return this.userFactory.deleteAffiliateProfileById(id, body);
 }
+
 
   
 

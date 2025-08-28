@@ -1260,15 +1260,37 @@ async setAffiliateStatusByEmail(
 async deleteAffiliateProfileById(
   this: any,
   id: string,
-  body: { deny?: boolean }
+  body: { deny?: boolean | string }
 ): Promise<{ success: boolean; message: string }> {
   try {
-    // If deny flag is set, do nothing
-    if (body?.deny) {
-      console.log(`[WP DELETE] Deletion denied for user ID: ${id}`);
+    // Normalize deny to boolean (accepts true or "true")
+    const isDenied = body?.deny === true || body?.deny === 'true';
+
+    if (isDenied) {
+      // ✅ Update affiliateStatus to DENIED and mirror legacy flags
+      const updated = await this.usersModel.findByIdAndUpdate(
+        id,
+        {
+          $set: {
+            affiliateStatus: 'DENIED',
+            'businessProfile.isApproved': false,
+            'businessProfile.approvedDate': null,
+          },
+        },
+        { new: true }
+      );
+
+      if (!updated) {
+        return {
+          success: false,
+          message: 'User not found; status not updated',
+        };
+      }
+
+      console.log(`[WP DELETE] Deletion denied for user ID: ${id}; status set to DENIED`);
       return {
         success: true,
-        message: 'Affiliate profile status changed (deletion skipped)',
+        message: 'Affiliate status set to DENIED (deletion skipped)',
       };
     }
 
@@ -1279,16 +1301,18 @@ async deleteAffiliateProfileById(
       .findById(id)
       .select('email passwordEncrypted')
       .lean();
+
     console.log(`[WP DELETE] Fetched user from DB:`, dbUser);
 
     if (!dbUser || !dbUser.passwordEncrypted) {
+      // still remove local doc if present, but here we keep behavior:
       return {
         success: true,
         message: 'Affiliate already deleted (no local record/password found)',
       };
     }
 
-    const email = dbUser.email.toLowerCase();
+    const email = (dbUser.email || '').toLowerCase();
     const plainPassword = decrypt(dbUser.passwordEncrypted);
     console.log(`[WP DELETE] Decrypted password for email: ${email}`);
 
@@ -1362,6 +1386,7 @@ async deleteAffiliateProfileById(
     throw err;
   }
 }
+
 
 
 
