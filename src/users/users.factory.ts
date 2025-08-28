@@ -1264,6 +1264,7 @@ async deleteAffiliateProfileById(
   body: { deny?: boolean | string }
 ): Promise<{ success: boolean; message: string }> {
   try {
+    console.log(body);
     const isDenied = body?.deny === true || body?.deny === 'true';
 
     const userDoc = await this.usersModel.findById(id).select('email').lean();
