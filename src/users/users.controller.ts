@@ -33,7 +33,50 @@ import { Model } from 'mongoose';
 import * as mongoose from 'mongoose'; // ✅ Correct for CommonJS style
 import { InjectConnection } from '@nestjs/mongoose';
 import { Connection } from 'mongoose';
+import * as qs from 'querystring';
+import { Request } from 'express';
 import * as jwt from 'jsonwebtoken';
+function unwrapBody(raw: any): any {
+  if (raw == null) return undefined;
+
+  // If body arrived as a string (wrong content-type), try to parse JSON or urlencoded
+  if (typeof raw === 'string') {
+    const s = raw.trim();
+    try {
+      // JSON string
+      return JSON.parse(s);
+    } catch {
+      // urlencoded fallback: "deny=true&x=1" or "deny=false"
+      const parsed = qs.parse(s);
+      return Object.keys(parsed).length ? parsed : { _raw: s };
+    }
+  }
+
+  // If we got a normal object, just return it
+  return raw;
+}
+
+function pickDenyPresence(obj: any): boolean {
+  if (!obj || typeof obj !== 'object') return false;
+
+  // direct
+  if ('deny' in obj) return true;
+
+  // common wrappers
+  const candidates = [obj.body, obj.data, obj.payload];
+  for (const c of candidates) {
+    if (c && typeof c === 'object' && 'deny' in c) return true;
+    // support a JSON string nested inside wrapper
+    if (typeof c === 'string') {
+      try {
+        const j = JSON.parse(c);
+        if (j && typeof j === 'object' && 'deny' in j) return true;
+      } catch {}
+    }
+  }
+  return false;
+}
+
 @UseGuards(RolesGuard)
 @Controller('auth')
 export class UserController {
@@ -256,21 +299,28 @@ async addHelpMessage(@Req() req: Request, @Body() body: any) {
 async deleteAffiliateProfile(
   @Param('id') id: string,
   @Body() body: any,
+  @Req() req: Request,
 ) {
-  // consider the field present in any wrapping
-  const denyRaw =
-    body?.deny ??
-    body?.body?.deny ??
-    body?.data?.deny ??
-    body?.payload?.deny;
+  // 1) normalize/unwrap the incoming body
+  const unwrapped = unwrapBody(body);
 
-  // pass "has deny" (presence), not its value
-  const hasDeny = typeof denyRaw !== 'undefined';
-  console.log('deny present?', hasDeny, 'value:', denyRaw);
+  // 2) compute presence from body
+  let hasDeny = pickDenyPresence(unwrapped);
+
+  // 3) fallback to query string (?deny=true/false)
+  if (!hasDeny && (req.query?.deny !== undefined)) {
+    hasDeny = true;
+  }
+
+  // 4) fallback to header (X-Deny: true/false)
+  if (!hasDeny && req.headers['x-deny'] !== undefined) {
+    hasDeny = true;
+  }
+
+  console.log('deny present?', hasDeny, 'raw body:', body);
 
   return this.userFactory.deleteAffiliateProfileById(id, hasDeny);
 }
-
 
 
 

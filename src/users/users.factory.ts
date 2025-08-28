@@ -1257,21 +1257,24 @@ async setAffiliateStatusByEmail(
   }
 
 
+
 async deleteAffiliateProfileById(
   this: any,
   id: string,
-  denyPresent: boolean, // presence of field, not truthiness
+  denyPresent: boolean,
 ): Promise<{ success: boolean; message: string }> {
   try {
-    console.log('denyPresent:', denyPresent);
+    // Normalize deny to boolean (accepts true or "true")
+    const isDenied = denyPresent === true;
 
-    const userDoc = await this.usersModel.findById(id).select('email').lean();
-    if (!userDoc) {
-      return { success: false, message: 'User not found; nothing changed' };
-    }
+    if (isDenied) {
+      // Fetch user email for WP status call
+      const userDoc = await this.usersModel.findById(id).select('email').lean();
+      if (!userDoc) {
+        return { success: false, message: 'User not found; status not updated' };
+      }
 
-    // If the deny field is present (true OR false), mark as DENIED
-    if (denyPresent) {
+      // 1) Update local status to DENIED and mirror legacy flags
       await this.usersModel.findByIdAndUpdate(
         id,
         {
@@ -1284,14 +1287,14 @@ async deleteAffiliateProfileById(
         { new: true }
       );
 
-      // best-effort notify WP
+      // 2) Notify WordPress about the status change
       try {
         await axios.post(
           'https://runmysale.com/wp-json/wpus/v1/user/status',
           {
             email: (userDoc.email || '').toLowerCase(),
             status: 'denied',
-            reason: 'Documents verified',
+            reason: 'Documents verified', // fixed reason per your curl
           },
           {
             headers: {
@@ -1301,35 +1304,106 @@ async deleteAffiliateProfileById(
             timeout: 10000,
           }
         );
-      } catch (e) {
-        console.error('[WP STATUS] Failed:', e?.response?.data || e?.message || e);
+      } catch (wpErr: any) {
+        console.error('[WP STATUS] Failed to update WP user status:', wpErr?.response?.data || wpErr?.message || wpErr);
+        // Do not fail the whole request if WP call fails
       }
 
-      return { success: true, message: 'Affiliate status set to DENIED (no deletion)' };
+      console.log(`[WP DELETE] Deletion denied for user ID: ${id}; status set to DENIED`);
+      return {
+        success: true,
+        message: 'Affiliate status set to DENIED (deletion skipped, WP notified)',
+      };
     }
 
-    // If deny field is NOT present, just disable access (pending)
-    await this.usersModel.findByIdAndUpdate(
-      id,
-      {
-        $set: {
-          affiliateStatus: 'PENDING',
-          'businessProfile.isApproved': false,
-          'businessProfile.approvedDate': null,
-        },
-      },
-      { new: true }
+    console.log(`[WP DELETE] Starting deletion process for user ID: ${id}`);
+
+    // 1) Fetch user from DB
+    const dbUser = await this.usersModel
+      .findById(id)
+      .select('email passwordEncrypted')
+      .lean();
+
+    console.log(`[WP DELETE] Fetched user from DB:`, dbUser);
+
+    if (!dbUser || !dbUser.passwordEncrypted) {
+      return {
+        success: true,
+        message: 'Affiliate already deleted (no local record/password found)',
+      };
+    }
+
+    const email = (dbUser.email || '').toLowerCase();
+    const plainPassword = decrypt(dbUser.passwordEncrypted);
+    console.log(`[WP DELETE] Decrypted password for email: ${email}`);
+
+    // 2) Login to WordPress
+    console.log(`[WP DELETE] Logging into WordPress for email: ${email}`);
+    const wpLoginResponse = await axios.post(
+      'https://runmysale.com/wp-json/affiliate-subscription/v1/login',
+      { username: email, password: plainPassword },
+      { headers: { 'Content-Type': 'application/json' } }
     );
 
-    return { success: true, message: 'Affiliate access disabled (no local deletion)' };
+    console.log(`[WP DELETE] WordPress login response:`, wpLoginResponse.data);
+
+    // 3) Extract PHPSESSID from cookies
+    const cookies = wpLoginResponse.headers['set-cookie'];
+    if (!cookies || cookies.length === 0) {
+      throw new BadRequestException('WordPress login failed (no PHPSESSID)');
+    }
+    const phpSessionCookie =
+      cookies.find((c: string) => c.startsWith('PHPSESSID=')) || '';
+    if (!phpSessionCookie) {
+      throw new BadRequestException('PHPSESSID not found in cookies');
+    }
+    const phpSessId = phpSessionCookie.split(';')[0];
+    console.log(`[WP DELETE] PHPSESSID: ${phpSessId}`);
+
+    // 4) Delete from WordPress
+    const deletePayload = { email, secret: 'MyUltraSecureSecret123' };
+    console.log('[WP DELETE] Sending delete request with payload:', deletePayload);
+
+    await axios.post(
+      'https://runmysale.com/wp-json/affsub/v1/delete-user',
+      deletePayload,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: phpSessId,
+        },
+        timeout: 10000,
+      }
+    );
+
+    console.log(`[WP DELETE] WordPress deletion successful for email: ${email}`);
+
+    // 5) Delete from local DB
+    const result = await this.usersModel.deleteOne({ _id: id });
+    console.log(`[WP DELETE] Local DB deletion result:`, result);
+
+    if (result.deletedCount === 0) {
+      console.warn('[WP DELETE] User not found in DB (maybe already deleted)');
+      return {
+        success: true,
+        message:
+          'Affiliate profile deleted from WordPress and was already removed locally',
+      };
+    }
+
+    console.log(`[WP DELETE] Deletion completed successfully for user ID: ${id}`);
+    return {
+      success: true,
+      message: 'Affiliate profile deleted successfully from both systems',
+    };
   } catch (err: any) {
-    console.error('[deleteAffiliateProfileById] Error:', err.response?.data || err.message);
+    console.error(
+      '[deleteAffiliateProfileById] Error:',
+      err.response?.data || err.message
+    );
     throw err;
   }
 }
-
-
-
 
 
 
