@@ -1257,22 +1257,21 @@ async setAffiliateStatusByEmail(
   }
 
 
-
 async deleteAffiliateProfileById(
   this: any,
   id: string,
-  deny: boolean,
+  denyPresent: boolean, // presence of field, not truthiness
 ): Promise<{ success: boolean; message: string }> {
   try {
-    console.log(deny); // will be true/false now
-    const isDenied = deny === true;
+    console.log('denyPresent:', denyPresent);
 
     const userDoc = await this.usersModel.findById(id).select('email').lean();
     if (!userDoc) {
       return { success: false, message: 'User not found; nothing changed' };
     }
 
-    if (isDenied) {
+    // If the deny field is present (true OR false), mark as DENIED
+    if (denyPresent) {
       await this.usersModel.findByIdAndUpdate(
         id,
         {
@@ -1285,6 +1284,7 @@ async deleteAffiliateProfileById(
         { new: true }
       );
 
+      // best-effort notify WP
       try {
         await axios.post(
           'https://runmysale.com/wp-json/wpus/v1/user/status',
@@ -1308,6 +1308,7 @@ async deleteAffiliateProfileById(
       return { success: true, message: 'Affiliate status set to DENIED (no deletion)' };
     }
 
+    // If deny field is NOT present, just disable access (pending)
     await this.usersModel.findByIdAndUpdate(
       id,
       {
@@ -1326,6 +1327,7 @@ async deleteAffiliateProfileById(
     throw err;
   }
 }
+
 
 
 

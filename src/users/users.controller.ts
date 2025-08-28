@@ -255,18 +255,22 @@ async addHelpMessage(@Req() req: Request, @Body() body: any) {
 @Put('affiliate/:id/deleteProfile')
 async deleteAffiliateProfile(
   @Param('id') id: string,
-  @Body() body: any, // grab the whole payload
+  @Body() body: any,
 ) {
-  // accept { "deny": true } OR { "deny": "true" } and ignore wrappers like { body: { deny: ... } }
-  const deny =
-    body?.deny === true ||
-    body?.deny === 'true' ||
-    body?.body?.deny === true ||
-    body?.body?.deny === 'true';
-  console.log(deny);
+  // consider the field present in any wrapping
+  const denyRaw =
+    body?.deny ??
+    body?.body?.deny ??
+    body?.data?.deny ??
+    body?.payload?.deny;
 
-  return this.userFactory.deleteAffiliateProfileById(id, !!deny);
+  // pass "has deny" (presence), not its value
+  const hasDeny = typeof denyRaw !== 'undefined';
+  console.log('deny present?', hasDeny, 'value:', denyRaw);
+
+  return this.userFactory.deleteAffiliateProfileById(id, hasDeny);
 }
+
 
 
 
