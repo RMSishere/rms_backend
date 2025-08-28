@@ -1261,11 +1261,11 @@ async setAffiliateStatusByEmail(
 async deleteAffiliateProfileById(
   this: any,
   id: string,
-  body: { deny?: boolean | string }
+  deny:boolean,
 ): Promise<{ success: boolean; message: string }> {
   try {
-    console.log(body);
-    const isDenied = body?.deny === true || body?.deny === 'true';
+    console.log(deny);
+    const isDenied =deny === true;
 
     const userDoc = await this.usersModel.findById(id).select('email').lean();
     if (!userDoc) {
