@@ -804,8 +804,7 @@ async getAllIncomingMessages(
     }
   }
 
-  // --------- NEW: Incoming Messages v3 (more robust sender inference + hydration) ----------
-// chat.factory.ts (inside ChatFactory)
+
 async getAllIncomingMessages3(
   skip: number,
   query: any,
@@ -1073,80 +1072,78 @@ async getAllIncomingMessages3(
       return { ...r, sender: u, senderId: String((u as any)?._id) };
     }
 
-    // (5) synthetic fallback so UI never gets null
-    const fallbackEmail =
-      (typeof createdBy === 'string' && createdBy) ||
-      (mf && typeof mf === 'object' && (mf as any)?.createdBy) ||
-      null;
-
-    const fallbackId =
-      sid ||
-      (mf && typeof mf === 'object' && (mf as any)?.requesterOwner) ||
-      null;
-
-    const pseudo = {
-      _id: fallbackId,
-      firstName: 'Unknown',
-      lastName: 'User',
-      email: fallbackEmail,
-      avatar: null,
-      role: null,
-      id: null,
-      __synthetic: true,
-    };
-
+    // (5) synthetic fallback (very rare): build a minimal sender from whatever we have
     synthetic++;
-    return { ...r, sender: pseudo };
+    return {
+      ...r,
+      sender: r.sender || {
+        _id: r.senderId || this.toObjectIdSafe(r.createdBy) || undefined,
+        firstName: 'Unknown',
+        lastName: '',
+        email: r.createdBy || undefined,
+        role: undefined,
+        id: undefined,
+        avatar: undefined,
+      },
+    };
   });
 
-  console.log(
-    `[incoming3][attach] viaSenderId=${attached} | viaRequesterOwner=${attachedViaRequester} | viaEmail=${attachedViaEmail} | synthetic=${synthetic}`,
-  );
-  log.debug(
-    `[attach] viaSenderId=${attached} | viaRequesterOwner=${attachedViaRequester} | viaEmail=${attachedViaEmail} | synthetic=${synthetic}`,
-  );
+  // 4) Collapse to one thread per user (counterparty) just before returning
+  // Key strategy (first that exists wins):
+  //   sender._id -> senderId -> messageFor.requesterOwner -> createdBy (email) -> row _id (fallback)
+  const keyFor = (r: any) => {
+    if (r?.sender && r.sender._id) return String(r.sender._id);
+    if (r?.senderId) return String(r.senderId);
+    const mf = r?.messageFor;
+    const requesterOwner =
+      mf && typeof mf === 'object' ? (mf as any)?.requesterOwner : mf?.requesterOwner;
+    if (requesterOwner) return String(requesterOwner);
+    if (r?.createdBy && /\S+@\S+\.\S+/.test(String(r.createdBy))) {
+      return String(r.createdBy).toLowerCase().trim();
+    }
+    return String(r._id);
+  };
 
-  // Diagnostics: users collection probe
-  try {
-    const usersCountProbe = await this.userModel.estimatedDocumentCount();
-    const oneUser = await this.userModel.findOne({}).select('_id email firstName lastName').lean();
-    console.warn(
-      '[incoming3][diag] users collection probe: count≈',
-      usersCountProbe,
-      ' sample _id=',
-      oneUser?._id,
-      ' email=',
-      oneUser?.email,
-    );
-  } catch (probeErr) {
-    console.warn('[incoming3][diag] users collection probe failed:', probeErr);
+  type ThreadRow = any & { threadCount?: number; threadUnread?: number };
+  const threadsMap = new Map<string, ThreadRow>();
+
+  for (const r of rows) {
+    const k = keyFor(r);
+    const prev = threadsMap.get(k);
+    const isUnread = !r.read;
+
+    if (!prev) {
+      threadsMap.set(k, { ...r, threadCount: 1, threadUnread: isUnread ? 1 : 0 });
+    } else {
+      // keep the MOST RECENT message as representative
+      const newer = new Date(r.createdAt).getTime() > new Date(prev.createdAt).getTime();
+      const rep = newer ? r : prev;
+
+      threadsMap.set(k, {
+        ...rep,
+        threadCount: (prev.threadCount || 0) + 1,
+        threadUnread: (prev.threadUnread || 0) + (isUnread ? 1 : 0),
+      });
+    }
   }
 
-  // 4) Log a few sample rows for sanity
-  (rows.slice(0, 5) || []).forEach((doc: any, i: number) => {
-    console.log(
-      `[incoming3][ROW ${i}] _id=${(doc as any)?._id} senderId=${(doc as any)?.senderId} hasSenderObj=${
-        !!doc?.sender && typeof doc.sender === 'object'
-      } synthetic=${(doc as any)?.sender?.__synthetic ? 'yes' : 'no'}`,
-    );
-    log.debug(
-      `[ROW ${i}] _id=${(doc as any)?._id} senderId=${(doc as any)?.senderId} senderKeys=${
-        (doc as any)?.sender ? Object.keys((doc as any).sender) : 'null'
-      } synthetic=${(doc as any)?.sender?.__synthetic ? 'yes' : 'no'}`,
-    );
-  });
-
-  // 5) Return the same shape as existing endpoints (IncomingChatDto + counts)
-  const result = rows.map((res: any) => new IncomingChatDto(res));
-  console.log(
-    `>>> [incoming3] DONE results=${result.length}, count=${count}, unread=${unreadCount}, totalMs=${Date.now() - t0}`,
-  );
-  log.log(
-    `success | results=${result.length} | count=${count} | unread=${unreadCount} | durationMs=${Date.now() - t0}`,
+  const threadList = Array.from(threadsMap.values()).sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
 
-  return { result, count, unreadCount, skip };
+  log.debug(
+    `done | ms=${Date.now() - t0} | rawRows=${rows.length} | threads=${threadList.length} | collapsedUnread=${threadList.reduce((a,t)=>a+(t.threadUnread||0),0)}`,
+  );
+
+  // IMPORTANT: keep the ORIGINAL response format and top-level counts
+  return {
+    result: threadList,
+    count,        // original total matching docs (pre-collapse)
+    unreadCount,  // original unread total (pre-collapse)
+    skip: Number.isFinite(safeSkip) ? safeSkip : null,
+  };
 }
+
 
 
   // ---------------- create message ----------------
