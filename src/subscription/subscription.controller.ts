@@ -424,47 +424,58 @@ console.log("app",appFee);
     return { success: true };
   }
 
-  @Get('status')
-  async getStatus(@Req() req) {
-    const user = await this.userModel
-      .findOne({ id: req.user.id })
-      .select('subscription')
-      .lean();
-  
-    if (!user?.subscription) {
-      return {};
-    }
-  
-    const subscription = user.subscription;
-    let planName = null;
-  
-    // If there's a valid Stripe subscriptionId, fetch its details
-    if (subscription.subscriptionId) {
-      try {
-        const stripeSub = await stripe.subscriptions.retrieve(subscription.subscriptionId, {
-          expand: ['items.data.price.product'],
-        });
-  
-        planName = (stripeSub.items.data[0]?.price?.product as Stripe.Product)?.name || null;
-      } catch (err) {
-        console.error('Failed to fetch subscription from Stripe:', err.message);
-      }
-    }
-  
-    return {
-      type: subscription.type,
-      billingType: subscription.billingType,
-      status: subscription.status,
-      startedAt: subscription.startedAt,
-      expiresAt: subscription.expiresAt,
-      jobRequestCountThisMonth: subscription.jobRequestCountThisMonth,
-      pricingRequestsUsed: subscription.pricingRequestsUsed,
-      customVideosUsed: subscription.customVideosUsed,
-      pitchReviewsUsed: subscription.pitchReviewsUsed,
-      subscriptionId: subscription.subscriptionId,
-      planName,
-    };
+ @Get('status')
+async getStatus(@Req() req) {
+  const user = await this.userModel
+    .findOne({ id: req.user.id })
+    .select('subscription')
+    .lean();
+
+  if (!user?.subscription) {
+    return {};
   }
+
+  const subscription = user.subscription;
+  let planName: string | null = null;
+
+  // If there's a valid Stripe subscriptionId, fetch its details
+  if (subscription.subscriptionId) {
+    try {
+      const stripeSub = await stripe.subscriptions.retrieve(
+        subscription.subscriptionId,
+        { expand: ['items.data.price.product'] },
+      );
+
+      planName =
+        (stripeSub.items.data[0]?.price?.product as Stripe.Product)?.name || null;
+    } catch (err: any) {
+      console.error('Failed to fetch subscription from Stripe:', err?.message || err);
+    }
+  }
+
+  // --- NEW: compute effective status based on expiry ---
+  const now = Date.now();
+  const expMs = subscription.expiresAt ? new Date(subscription.expiresAt).getTime() : NaN;
+  const isExpired = Number.isFinite(expMs) && expMs < now;
+
+  const effectiveStatus =
+    isExpired ? 'INACTIVE' : (subscription.status ?? 'INACTIVE');
+
+  return {
+    type: subscription.type,
+    billingType: subscription.billingType,
+    status: effectiveStatus,                   // <- override if expired
+    startedAt: subscription.startedAt,
+    expiresAt: subscription.expiresAt,
+    jobRequestCountThisMonth: subscription.jobRequestCountThisMonth,
+    pricingRequestsUsed: subscription.pricingRequestsUsed,
+    customVideosUsed: subscription.customVideosUsed,
+    pitchReviewsUsed: subscription.pitchReviewsUsed,
+    subscriptionId: subscription.subscriptionId,
+    planName,
+  };
+}
+
   
 
   // @Put('use-job-credit')
