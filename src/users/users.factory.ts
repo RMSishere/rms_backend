@@ -923,112 +923,126 @@ async verifyVerificationCode(to: string, code: string, role: string): Promise<an
 }
   
 
-  async updateUserData(
-    dataToUpdate: User | any,
-    user: User,
-  ): Promise<User | APIMessage> {
-    try {
-      console.log("hello");
-      delete dataToUpdate['role'];
-      const sensitiveFields = ['password', 'isMobileVerfied', 'isEmailVerified'];
-  
-      if (!dataToUpdate) throw new BadRequestException('Invalid Data');
-  
-      const condition = { id: user.id, isActive: true };
-  
-      const hasSensitiveFields = getIntersection(Object.keys(dataToUpdate), sensitiveFields).length > 0;
-  
-      if (hasSensitiveFields) {
-        if (!user || !user.isUserVerified) {
-          throw new UnauthorizedException('Unverified user cannot update sensitive data');
-        }
-  
-        // Handle password change
-        if (dataToUpdate['password']) {
-          const plainNewPassword = dataToUpdate['password'];
-  
-          // Encrypt and update local password
-          dataToUpdate['password'] = await getEncryptedPassword(plainNewPassword);
-  
-          try {
-            // Fetch user with passwordEncrypted
-            const dbUser = await this.usersModel.findById(user.id).select('email passwordEncrypted');
-            if (!dbUser) throw new Error('User not found in DB for WP password update');
-  
-            const plainOldPassword = decrypt(dbUser.passwordEncrypted);
-  
-            // Login to WordPress with old password
-            const wpLoginResponse = await Axios.post(
-              'https://runmysale.com/wp-json/affiliate-subscription/v1/login',
-              {
-                username: dbUser.email,
-                password: plainOldPassword,
-              }
-            );
-  
-            if (!wpLoginResponse.data || !wpLoginResponse.data.token) {
-              throw new Error('Failed to login to WordPress to update password');
-            }
-  
-            const wpToken = wpLoginResponse.data.token;
-  
-            // Update password on WordPress
-            const wpUpdateResponse = await axios.post(
-              'https://runmysale.com/wp-json/affiliate-subscription/v1/update_profile',
-              {
-                token: wpToken,
-                password: plainNewPassword,
-              }
-            );
-  
-            if (!wpUpdateResponse.data || wpUpdateResponse.data.success === false) {
-              throw new Error('Failed to update password on WordPress');
-            }
-          } catch (wpErr) {
-            throw new Error(`WordPress password update error: ${wpErr.message}`);
-          }
-        }
-  
-        // Update local user
-        const newValue = { $set: { ...dataToUpdate } };
-        const updatedUser = await this.usersModel.findOneAndUpdate(condition, newValue, { new: true });
-  
-        const res = new UserDto(updatedUser);
-        res['token'] = await generateToken(updatedUser);
-        return res;
-      } else {
-        // Handle general data updates
-        if (dataToUpdate.email && dataToUpdate.email !== user.email) {
-          const userExist = await this.checkUserExist({ email: dataToUpdate.email });
-          if (userExist) {
-            return new APIMessage('User with given email already exists!', APIMessageTypes.ERROR);
-          }
-        }
-  
-        if (dataToUpdate.phoneNumber && dataToUpdate.phoneNumber !== user.phoneNumber) {
-          dataToUpdate.isMobileVerfied = false;
-          const userExist = await this.checkUserExist({ phoneNumber: dataToUpdate.phoneNumber });
-          if (userExist) {
-            return new APIMessage('User with given phone number already exists!', APIMessageTypes.ERROR);
-          }
-        }
-  
-        const newValue = { $set: { ...dataToUpdate } };
-        const updatedUser = await this.usersModel.findOneAndUpdate(condition, newValue, { new: true });
-  
-        const res = new UserDto(updatedUser);
-  
-        if (dataToUpdate['completingSignUp'] && updatedUser.role === USER_ROLES.CLIENT) {
-          await this.sendWelcomeText(updatedUser);
-        }
-  
-        res['token'] = await generateToken(updatedUser);
-        return res;
+ async updateUserData(
+  dataToUpdate: User | any,
+  user: User,
+): Promise<User | APIMessage> {
+  try {
+    console.log("hello");
+    delete dataToUpdate['role'];
+    const sensitiveFields = ['password', 'isMobileVerfied', 'isEmailVerified'];
+
+    if (!dataToUpdate) throw new BadRequestException('Invalid Data');
+
+    const condition = { id: user.id, isActive: true };
+
+    const hasSensitiveFields =
+      getIntersection(Object.keys(dataToUpdate), sensitiveFields).length > 0;
+
+    if (hasSensitiveFields) {
+      if (!user || !user.isUserVerified) {
+        throw new UnauthorizedException('Unverified user cannot update sensitive data');
       }
-    } catch (err) {
-      throw err;
+
+      // Handle password change
+      if (dataToUpdate['password']) {
+        const plainNewPassword = dataToUpdate['password'];
+
+        // Encrypt and update local password
+        dataToUpdate['password'] = await getEncryptedPassword(plainNewPassword);
+
+        try {
+          // ✅ FIX: use findOne({ id }) instead of findById(user.id)
+          const dbUser = await this.usersModel
+            .findOne({ id: user.id })
+            .select('email passwordEncrypted')
+            .lean();
+
+          if (!dbUser) throw new Error('User not found in DB for WP password update');
+
+          const plainOldPassword = decrypt(dbUser.passwordEncrypted);
+
+          // Login to WordPress with old password
+          const wpLoginResponse = await Axios.post(
+            'https://runmysale.com/wp-json/affiliate-subscription/v1/login',
+            {
+              username: dbUser.email,
+              password: plainOldPassword,
+            }
+          );
+
+          if (!wpLoginResponse.data || !wpLoginResponse.data.token) {
+            throw new Error('Failed to login to WordPress to update password');
+          }
+
+          const wpToken = wpLoginResponse.data.token;
+
+          // Update password on WordPress
+          const wpUpdateResponse = await axios.post(
+            'https://runmysale.com/wp-json/affiliate-subscription/v1/update_profile',
+            {
+              token: wpToken,
+              password: plainNewPassword,
+            }
+          );
+
+          if (!wpUpdateResponse.data || wpUpdateResponse.data.success === false) {
+            throw new Error('Failed to update password on WordPress');
+          }
+        } catch (wpErr) {
+          throw new Error(`WordPress password update error: ${wpErr.message}`);
+        }
+      }
+
+      // Update local user
+      const newValue = { $set: { ...dataToUpdate } };
+      const updatedUser = await this.usersModel.findOneAndUpdate(
+        condition,
+        newValue,
+        { new: true }
+      );
+
+      const res = new UserDto(updatedUser);
+      res['token'] = await generateToken(updatedUser);
+      return res;
+    } else {
+      // Handle general data updates
+      if (dataToUpdate.email && dataToUpdate.email !== user.email) {
+        const userExist = await this.checkUserExist({ email: dataToUpdate.email });
+        if (userExist) {
+          return new APIMessage('User with given email already exists!', APIMessageTypes.ERROR);
+        }
+      }
+
+      if (dataToUpdate.phoneNumber && dataToUpdate.phoneNumber !== user.phoneNumber) {
+        dataToUpdate.isMobileVerfied = false;
+        const userExist = await this.checkUserExist({ phoneNumber: dataToUpdate.phoneNumber });
+        if (userExist) {
+          return new APIMessage('User with given phone number already exists!', APIMessageTypes.ERROR);
+        }
+      }
+
+      const newValue = { $set: { ...dataToUpdate } };
+      const updatedUser = await this.usersModel.findOneAndUpdate(
+        condition,
+        newValue,
+        { new: true }
+      );
+
+      const res = new UserDto(updatedUser);
+
+      if (dataToUpdate['completingSignUp'] && updatedUser.role === USER_ROLES.CLIENT) {
+        await this.sendWelcomeText(updatedUser);
+      }
+
+      res['token'] = await generateToken(updatedUser);
+      return res;
     }
+  } catch (err) {
+    throw err;
   }
+}
+
 async autoVerifyPhoneNumber(phoneNumber: string): Promise<User | APIMessage> {
   try {
     // Find the user by phone number
