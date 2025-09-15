@@ -22,7 +22,7 @@ import { Device } from 'src/util/pushNotification';
 import { HelpMessage, UserMiscInfo } from '../lib/index';
 import { UserDto } from './users.dto';
 import { UserFactory } from './users.factory';
-import { getfullName } from 'src/util';
+import { getEncryptedPassword, getfullName } from 'src/util';
 import moment = require('moment');
 import appleSigninAuth from 'apple-signin-auth';
 import jwt_decode from "jwt-decode";
@@ -36,6 +36,7 @@ import { Connection } from 'mongoose';
 import * as qs from 'querystring';
 import { Request } from 'express';
 import * as jwt from 'jsonwebtoken';
+import { generateToken } from 'src/util/auth';
 function unwrapBody(raw: any): any {
   if (raw == null) return undefined;
 
@@ -348,36 +349,54 @@ async deleteAffiliateProfilePost(@Param('id') id: string) {
   async getAllCustomers(@Query() params: any) {
     return this.userFactory.getAllCustomers(params);
   }
-  @Put('update-password')
-  async updatePassword(
-    @Body('email') email: string,
-    @Body('newPassword') newPassword: string,
-  ) {
-    try {
-      // Log current DB connection details
-      // xs
-  
-      // Log all users for debug
-      const allUsers = await this.usersSchema.find();
-      console.log('[updatePassword] All users in DB (email only):', allUsers);
-  
-      const normalizedEmail = email?.trim().toLowerCase();
-      console.log('[updatePassword] Searching for email:', normalizedEmail);
-  
-      const user = await this.usersSchema.findOne({ email: normalizedEmail }).exec();
-  
-      if (!user) {
-        console.error('[updatePassword] User not found for:', normalizedEmail);
-        throw new BadRequestException('User not found');
-      }
-  
-      const dataToUpdate = { password: newPassword };
-      return this.userFactory.updateUserData(dataToUpdate, user);
-    } catch (error) {
-      console.error('[updatePassword] Error:', error);
-      throw error;
+@Put('update-password')
+async updatePassword(
+  @Body('email') email: string,
+  @Body('newPassword') newPassword: string,
+) {
+  try {
+    // 1) Validate input
+    const normalizedEmail = (email ?? '').trim().toLowerCase();
+    const plainNewPassword = (newPassword ?? '').trim();
+
+    if (!normalizedEmail || !plainNewPassword) {
+      throw new BadRequestException('Email and newPassword are required');
     }
+    if (plainNewPassword.length < 8) {
+      throw new BadRequestException('Password must be at least 8 characters long');
+    }
+
+    // 2) Find active user by email
+    const user = await this.usersSchema
+      .findOne({ email: normalizedEmail, isActive: true })
+      .select('id email isActive password') // no decrypt/encrypt fields needed
+      .exec();
+
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
+
+    // 3) Hash and save new password (DB only; no WordPress)
+    user.password = await getEncryptedPassword(plainNewPassword);
+
+    // Optional: clear any old reversible copy if you used it in the past
+    // If your schema allows null/undefined:
+    // @ts-ignore
+    user.passwordEncrypted = undefined;
+
+    await user.save();
+
+    // 4) Return updated user + fresh token
+    const res = new UserDto(user);
+    res['token'] = await generateToken(user);
+    return res;
+  } catch (error) {
+    console.error('[updatePassword] Error:', error);
+    throw error;
   }
+}
+
+
   
   // @Roles(USER_ROLES.ADMIN)
   @Get('affiliate')
@@ -441,3 +460,7 @@ async approveBusinessProfileByEmail(@Body('email') email: string) {
     return this.userFactory.approveBusinessProfile2(phoneNumber, req.user);
   }
 }
+function encrypt(plainNewPassword: string) {
+  throw new Error('Function not implemented.');
+}
+
