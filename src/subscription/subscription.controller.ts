@@ -29,7 +29,7 @@ import Stripe from 'stripe';
 import { Types } from 'mongoose';
 import * as mongoose from 'mongoose';
 const stripe = new Stripe(
-  'REMOVED_STRIPE_TEST_KEY',
+  'REMOVED_STRIPE_LIVE_KEY',
   { apiVersion: '2025-04-30.basil' }
 );
 

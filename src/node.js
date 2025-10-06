@@ -1,7 +1,7 @@
 const Stripe = require('stripe');
 
 // Replace this key if needed
-const stripe = new Stripe('REMOVED_STRIPE_TEST_KEY', {
+const stripe = new Stripe('REMOVED_STRIPE_LIVE_KEY', {
   apiVersion: '2025-04-30.basil',
 });
 
