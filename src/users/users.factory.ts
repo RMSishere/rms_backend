@@ -668,7 +668,7 @@ async login(
   email: string,
   password: string,
   role?: string,
-  device?: Device,
+  device?: Device, // Add device param for FCM token
 ): Promise<User | APIMessage> {
   try {
     const query: any = {
@@ -689,22 +689,24 @@ async login(
       // Include subscription details
       newUser['subscription'] = user.subscription;
 
-      // Check if user logged in with a new device
-      if (
-        device &&
-        !newUser.devices.map(dt => dt.token).includes(device.token)
-      ) {
-        const newDevices = newUser.devices.concat([device]);
+      // Check if user logged in with a new device and store the FCM token
+      if (device && device.token && !newUser.devices.map(dt => dt.token).includes(device.token)) {
+        // Add the new FCM token to the devices array
+        const newDevices = [...newUser.devices, { token: device.token, os: device.os }];
         const condition = { id: user.id, isActive: true };
         const newValue = { $set: { devices: newDevices } };
+
+        // Update the user with the new device token
         await this.usersModel.updateOne(condition, newValue);
       }
 
+      // Generate JWT token
       newUser['token'] = await generateToken(user);
+
       return newUser;
     }
 
-    // Check if WordPress user
+    // If credentials are invalid, check WordPress login as fallback
     try {
       const res = await Axios.post(process.env.WP_LOGIN_URL, {
         username: email,
@@ -725,6 +727,7 @@ async login(
       throw error;
     }
 
+    // If no valid login found, return Unauthorized
     throw new HttpException(
       new APIMessage('Invalid Credentials!', APIMessageTypes.ERROR),
       HttpStatus.UNAUTHORIZED,
@@ -733,6 +736,7 @@ async login(
     throw err;
   }
 }
+
 
 
   async getUserProfile(id: string): Promise<User> {

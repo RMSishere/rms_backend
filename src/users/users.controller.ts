@@ -86,10 +86,27 @@ export class UserController {
     
   }
 
-  @Post('register')
-  async addUser(@Body() data: UserDto) {
+@Post('register')
+async addUser(@Body() data: UserDto) {
+  try {
+    // Check if FCM data is present
+    if (data?.devices && Array.isArray(data.devices)) {
+      // Handle FCM functionality (Optional)
+      // You can choose to keep the devices or handle them if needed
+      // If there's any special processing for FCM, handle it here
+      console.log('FCM Devices:', data.devices);
+    } else {
+      console.log('No FCM data provided');
+    }
+
+    // Proceed with user creation as usual (excluding FCM from WordPress sync)
     return this.userFactory.addUser(data);
+  } catch (err) {
+    console.error('Error during registration:', err);
+    throw err;
   }
+}
+
 
 // users.controller.ts
 @Post('affiliate/status')

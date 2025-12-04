@@ -16,7 +16,6 @@ export const usersSchema = new mongoose.Schema(
     zipCode: { type: String },
     passwordEncrypted: { type: String, default: null },
     role: { type: Number, default: USER_ROLES.CLIENT },
-
     businessProfile: businessProfileSchema,
 
     // ✅ Single status field (no audit/meta)
