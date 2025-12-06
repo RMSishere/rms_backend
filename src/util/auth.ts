@@ -65,7 +65,7 @@ export const getDecodedToken = token => {
     }
 
     const decoded = jwt.verify(token, jwtSecretKey);
-    if (decoded && decoded.id) {
+    if (decoded && decoded?.id) {
       return decoded;
     } else {
       throw new UnauthorizedException(API_MESSAGES.TOKEN_EXPIRED);
