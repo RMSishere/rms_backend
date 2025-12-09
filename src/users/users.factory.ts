@@ -664,58 +664,92 @@ async addUser2(data: any): Promise<User | APIMessage> {
 
   // import { HttpException, HttpStatus } from '@nestjs/common';
 
+private async updateDeviceToken(
+  user: User,
+  device?: Device
+): Promise<User> {
+  if (!device || !device.token) {
+    return user; // no device provided
+  }
+
+  const token = device.token;
+  const os = device.os || "unknown";
+
+  // Prevent duplicates → overwrite existing token if same OS
+  const existingDevices = user.devices || [];
+
+  const alreadyExists = existingDevices.some((d) => d.token === token);
+
+  let updatedDevices;
+
+  if (alreadyExists) {
+    // update OS if needed
+    updatedDevices = existingDevices.map((d) =>
+      d.token === token ? { token, os } : d
+    );
+  } else {
+    updatedDevices = [...existingDevices, { token, os }];
+  }
+
+  await this.usersModel.updateOne(
+    { id: user.id },
+    { $set: { devices: updatedDevices } }
+  );
+
+  return await this.usersModel.findOne({ id: user.id }).exec();
+}
+
+
 async login(
   email: string,
   password: string,
   role?: string,
-  device?: Device, // Add device param for FCM token
+  device?: Device, // { token: string, os: string }
 ): Promise<User | APIMessage> {
   try {
-    const query: any = {
-      email: email.toLowerCase(),
-    };
-    if (role) {
-      query.role = role;
-    }
+    const query: any = { email: email.toLowerCase() };
+    if (role) query.role = role;
+
     const user = await this.usersModel.findOne(query).exec();
+
     let isPasswordCorrect = false;
     if (user) {
       isPasswordCorrect = await verifyPassword(password, user.password);
     }
 
+    // ------------------------------------
+    //  USER FOUND + PASSWORD CORRECT
+    // ------------------------------------
     if (user && isPasswordCorrect) {
-      const newUser = new UserDto(user);
+      const updatedUser = await this.updateDeviceToken(user, device);
 
-      // Include subscription details
-      newUser['subscription'] = user.subscription;
+      const res = new UserDto(updatedUser);
+      res['token'] = await generateToken(updatedUser);
 
-      // Check if user logged in with a new device and store the FCM token
-      if (device && device.token && !newUser.devices.map(dt => dt.token).includes(device.token)) {
-        // Add the new FCM token to the devices array
-        const newDevices = [...newUser.devices, { token: device.token, os: device.os }];
-        const condition = { id: user.id, isActive: true };
-        const newValue = { $set: { devices: newDevices } };
+      // include subscription
+      res['subscription'] = updatedUser.subscription;
 
-        // Update the user with the new device token
-        await this.usersModel.updateOne(condition, newValue);
-      }
-
-      // Generate JWT token
-      newUser['token'] = await generateToken(user);
-
-      return newUser;
+      return res;
     }
 
-    // If credentials are invalid, check WordPress login as fallback
+    // ------------------------------------
+    // WORDPRESS LOGIN FALLBACK
+    // ------------------------------------
     try {
-      const res = await Axios.post(process.env.WP_LOGIN_URL, {
+      const wpRes = await Axios.post(process.env.WP_LOGIN_URL, {
         username: email,
         password,
       });
 
-      if (res.data?.token) {
-        const wpData = res.data;
-        return await this.loginWithWordpress(wpData, password);
+      if (wpRes.data?.token) {
+        const wpData = wpRes.data;
+        const wpUser = await this.loginWithWordpress(wpData, password);
+
+        // Update device if provided
+        const updatedWPUser = await this.updateDeviceToken(wpUser, device);
+
+        updatedWPUser['token'] = await generateToken(updatedWPUser);
+        return updatedWPUser;
       }
     } catch (error) {
       if (error?.response?.data?.data?.status === 403) {
@@ -727,7 +761,7 @@ async login(
       throw error;
     }
 
-    // If no valid login found, return Unauthorized
+    // Final Failed Response
     throw new HttpException(
       new APIMessage('Invalid Credentials!', APIMessageTypes.ERROR),
       HttpStatus.UNAUTHORIZED,
@@ -736,6 +770,7 @@ async login(
     throw err;
   }
 }
+
 
 
 
