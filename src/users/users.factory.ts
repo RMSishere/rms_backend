@@ -53,6 +53,7 @@ import moment = require('moment-timezone');
 import Axios from 'axios';
 import { HttpException, HttpStatus } from '@nestjs/common';
 import axios from 'axios';
+import { sendPushNotificationToUser } from 'src/util/notification.util';
 
 import * as crypto from 'crypto';
 import { error } from 'console';
@@ -109,16 +110,19 @@ async addUser(data: User): Promise<User | APIMessage> {
     }
 
     if (!data.termsAccepted) {
-      console.log('Terms not accepted');
       return new APIMessage(
         'Please accept terms and conditions!',
         APIMessageTypes.ERROR,
       );
     }
 
+    // 🔍 Check email exists
     if (data.email) {
-      const userExist = await this.checkUserExist({ email: data.email, role: data.role });
-      console.log('Email check result:', userExist);
+      const userExist = await this.checkUserExist({
+        email: data.email,
+        role: data.role,
+      });
+
       if (userExist) {
         return new APIMessage(
           'User with given email & role already exists!',
@@ -127,66 +131,73 @@ async addUser(data: User): Promise<User | APIMessage> {
       }
     }
 
-    // if (data.phoneNumber) {
-    //   const userExist = await this.checkUserExist({
-    //     phoneNumber: data.phoneNumber,
-    //     role: data.role,
-    //   });
-    //   console.log('Phone check result:', userExist);
-    //   if (userExist) {
-    //     return new APIMessage(
-    //       'User with given phone number & role already exists!',
-    //       APIMessageTypes.ERROR,
-    //     );
-    //   }
-    // }
+    const plainPassword = data.password;
 
-    const plainPassword = data.password; // Save original password for external API
-
-    // Proceed with local DB creation first
+    // Generate sequential ID
     data['id'] = await this.generateSequentialId('users');
-    console.log('Generated user id:', data['id']);
-
     data.createdBy = this.getCreatedBy(data);
+
+    // Encrypt password
     data.password = await getEncryptedPassword(plainPassword);
     data.passwordEncrypted = encrypt(plainPassword);
+
+    // Avatar
     data['avatar'] = getDefaulAvatarUrl(data.firstName, data.lastName);
 
-    const newadata = await this.notificationSubscriptionFactory.getAllNotificationSubscriptions({}, data);
-    console.log('Generated notificationSubscriptions:', JSON.stringify(newadata, null, 2));
+    // Generate Notification Subscriptions
+    const subscriptions =
+      await this.notificationSubscriptionFactory.getAllNotificationSubscriptions(
+        {},
+        data,
+      );
 
-    if (Array.isArray(newadata) && newadata.length > 0) {
+    if (Array.isArray(subscriptions) && subscriptions.length > 0) {
       const seen = new Set<string>();
-      const sanitized = newadata
-        .filter(sub => !!sub)
+      data.notificationSubscriptions = subscriptions
         .map((sub, index) => {
-          if (!sub.id) sub.id = randomUUID();
-          if (!sub.title) sub.title = `user-${data.id}-title-${index + 1}`;
-          if (!sub.id || seen.has(sub.id)) return null;
+          if (!sub?.id) sub.id = randomUUID();
+          if (seen.has(sub.id)) return null;
           seen.add(sub.id);
           return sub;
         })
         .filter(Boolean);
-
-      console.log('Sanitized notificationSubscriptions count:', sanitized.length);
-      data.notificationSubscriptions = sanitized;
-    } else {
-      delete data.notificationSubscriptions;
     }
 
-    console.log('Final user data before save:', JSON.stringify(data, null, 2));
+    console.log(
+      'Final user data before save:',
+      JSON.stringify(data, null, 2),
+    );
 
-    const newUser = new this.usersModel(data);
-    const result = await newUser.save();
-    const res = new UserDto(result);
+    // Save user
+    const newUserDoc = new this.usersModel(data);
+    const savedUser = await newUserDoc.save();
+    const res = new UserDto(savedUser);
 
-    if (res.role === USER_ROLES.CLIENT) {
-      await this.sendWelcomeText(res);
+    // Add JWT token
+    res['token'] = await generateToken(savedUser);
+
+    // -----------------------------------------
+    // ✅ SEND PUSH NOTIFICATION (Direct Utility)
+    // -----------------------------------------
+    try {
+      const pushPayload = {
+        title: 'Welcome to RunMySale!',
+        body: `Hi ${savedUser.firstName}, your account was successfully created.`,
+        data: { type: 'welcome', userId: savedUser.id.toString() },
+      };
+
+      const result = await sendPushNotificationToUser(savedUser, pushPayload, {
+        quietHours: false, // Allow immediate sending
+      });
+
+      console.log('📲 Push Notification Result:', result);
+    } catch (err) {
+      console.error('⚠️ Push Notification Failed:', err.message || err);
     }
 
-    res['token'] = await generateToken(result);
-
-    // ✅ Make external API call in background (non-blocking)
+    // -----------------------------------------
+    // Background - Create Affiliate Profile (non-blocking)
+    // -----------------------------------------
     setImmediate(async () => {
       try {
         const affiliatePayload = {
@@ -197,9 +208,10 @@ async addUser(data: User): Promise<User | APIMessage> {
           role: 'member',
           phone_number: data?.phoneNumber ? data.phoneNumber : '',
           zip_code: data.zipCode,
-          dob: data.dob instanceof Date
-            ? data.dob.toISOString().split('T')[0]
-            : undefined,
+          dob:
+            data.dob instanceof Date
+              ? data.dob.toISOString().split('T')[0]
+              : undefined,
         };
 
         await Axios.post(
@@ -210,11 +222,9 @@ async addUser(data: User): Promise<User | APIMessage> {
 
         console.log('✅ External user created (non-blocking)');
       } catch (externalErr) {
-        const extData = externalErr.response?.data;
-        const errorMessage = extData?.message || externalErr.message;
-
-        console.error('⚠️ External user creation failed:', errorMessage);
-        // Optional: log to DB or notify admin
+        const msg =
+          externalErr.response?.data?.message || externalErr.message;
+        console.error('⚠️ External user creation failed:', msg);
       }
     });
 
@@ -227,6 +237,8 @@ async addUser(data: User): Promise<User | APIMessage> {
     throw err;
   }
 }
+
+
 async updateUser2(data: any): Promise<User | APIMessage> {
   try {
     console.log('Raw input data (update):', data);
