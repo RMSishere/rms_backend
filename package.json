@@ -50,7 +50,7 @@
     "email-templates": "^7.0.5",
     "express": "^4.17.1",
     "extends-classes": "^1.0.5",
-    "firebase-admin": "^13.6.0",
+    "firebase-admin": "^11.10.1",
     "form-data": "^3.0.0",
     "heroku": "^10.7.0",
     "jsonwebtoken": "^8.5.1",

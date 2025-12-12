@@ -30,8 +30,9 @@ import { Types } from 'mongoose';
 import * as mongoose from 'mongoose';
 const stripe = new Stripe(
   'REMOVED_STRIPE_LIVE_KEY',
-  { apiVersion: '2025-04-30.basil' }
+  { apiVersion: '2025-08-27.basil' }   // ✅ Use Stripe's latest supported version
 );
+
 
 const STRIPE_WEBHOOK_SECRET = 'whsec_QcumBf3YBDiTzem2EsrBodKrhxTMDNLL'; // Set this from your Stripe dashboard
 
