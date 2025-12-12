@@ -1,4 +1,5 @@
 require('dotenv').config();
+import './polyfills/node-file-polyfill';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 // import { readFileSync } from 'fs';
@@ -6,7 +7,6 @@ import { WinstonLogger, WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { AppModule } from './app.module';
 import { GLOBAL_PREFIX } from './config';
 import path = require('path');
-import './polyfills/file.polyfill';
 
 const morgan = require('morgan');
 
