@@ -8,17 +8,19 @@ export class GHLService {
 
   constructor() {
     this.client = axios.create({
-      baseURL: 'https://services.leadconnectorhq.com',
+      baseURL: 'https://rest.gohighlevel.com/v1',
       headers: {
         Authorization: `Bearer ${process.env.GHL_API_KEY}`,
         Version: '2021-07-28',
         'Content-Type': 'application/json',
       },
     });
+
+    this.logger.log('🔗 GHL Client initialized with baseURL = https://rest.gohighlevel.com/v1');
   }
 
   // =====================================================
-  // CONTACTS
+  // CONTACTS (Correct Upsert Method)
   // =====================================================
 
   async createOrUpdateContact(user: any) {
@@ -30,32 +32,33 @@ export class GHLService {
         email: user.email || undefined,
         phone: user.phoneNumber || undefined,
         postalCode: user.zipCode || undefined,
-        tags: user.tags || [], // optional but useful
+        tags: user.tags || [],
         source: 'app',
       };
 
       this.logger.debug(
-        `📩 GHL Contact Create/Update Payload → ${JSON.stringify(payload)}`
+        `📩 GHL Contact Upsert Payload → ${JSON.stringify(payload)}`
       );
 
-      // GHL does upsert automatically by email
-      const res = await this.client.post('/contacts/', payload);
+      const res = await this.client.post('/contacts/upsert', payload);
 
       const contactId =
-        res?.data?.contact?.id || res?.data?.id || null;
+        res?.data?.contact?.id ||
+        res?.data?.id ||
+        null;
 
       if (!contactId) {
         this.logger.error('❌ No contact ID returned by GHL');
         return null;
       }
 
-      this.logger.debug(`✅ GHL Contact Saved: ${contactId}`);
+      this.logger.log(`✅ GHL Contact Saved (ID = ${contactId})`);
       return contactId;
     } catch (error) {
       this.logger.error(
-        `❌ GHL createOrUpdateContact failed → ${
-          JSON.stringify(error.response?.data || error.message)
-        }`
+        `❌ GHL createOrUpdateContact failed → ${JSON.stringify(
+          error.response?.data || error.message
+        )}`
       );
       return null;
     }
@@ -96,13 +99,13 @@ export class GHLService {
         return null;
       }
 
-      this.logger.debug(`✅ GHL Opportunity Created: ${oppId}`);
+      this.logger.log(`✅ Opportunity Created (ID = ${oppId})`);
       return oppId;
     } catch (error) {
       this.logger.error(
-        `❌ GHL createOpportunity failed → ${
-          JSON.stringify(error.response?.data || error.message)
-        }`
+        `❌ GHL createOpportunity failed → ${JSON.stringify(
+          error.response?.data || error.message
+        )}`
       );
       return null;
     }
@@ -127,9 +130,9 @@ export class GHLService {
       return res?.data || null;
     } catch (error) {
       this.logger.error(
-        `❌ GHL updateOpportunity failed → ${
-          JSON.stringify(error.response?.data || error.message)
-        }`
+        `❌ GHL updateOpportunity failed → ${JSON.stringify(
+          error.response?.data || error.message
+        )}`
       );
       return null;
     }
@@ -142,7 +145,7 @@ export class GHLService {
       const payload = { stageId: newStageId };
 
       this.logger.debug(
-        `🔄 GHL Move Stage (${opportunityId}) → ${newStageId}`
+        `🔄 GHL Move Stage (${opportunityId}) → stage=${newStageId}`
       );
 
       await this.client.put(`/opportunities/${opportunityId}`, payload);
@@ -150,9 +153,9 @@ export class GHLService {
       return true;
     } catch (error) {
       this.logger.error(
-        `❌ GHL moveStage failed → ${
-          JSON.stringify(error.response?.data || error.message)
-        }`
+        `❌ GHL moveStage failed → ${JSON.stringify(
+          error.response?.data || error.message
+        )}`
       );
       return false;
     }
@@ -166,18 +169,18 @@ export class GHLService {
     try {
       if (!contactId) throw new Error('NULL contactId');
 
-      this.logger.debug(`🏷️ Add Tag → ${tag} to ${contactId}`);
+      this.logger.debug(`🏷️ Adding Tag "${tag}" to contact ${contactId}`);
 
-      const payload = { tags: [tag] };
-
-      await this.client.post(`/contacts/${contactId}/tags/`, payload);
+      await this.client.post(`/contacts/${contactId}/tags/`, {
+        tags: [tag],
+      });
 
       return true;
     } catch (error) {
       this.logger.error(
-        `❌ GHL addTag failed → ${
-          JSON.stringify(error.response?.data || error.message)
-        }`
+        `❌ GHL addTag failed → ${JSON.stringify(
+          error.response?.data || error.message
+        )}`
       );
       return false;
     }
@@ -187,16 +190,16 @@ export class GHLService {
     try {
       if (!contactId) throw new Error('NULL contactId');
 
-      this.logger.debug(`❌ Remove Tag → ${tag} from ${contactId}`);
+      this.logger.debug(`🗑️ Removing Tag "${tag}" from contact ${contactId}`);
 
       await this.client.delete(`/contacts/${contactId}/tags/${tag}`);
 
       return true;
     } catch (error) {
       this.logger.error(
-        `❌ GHL removeTag failed → ${
-          JSON.stringify(error.response?.data || error.message)
-        }`
+        `❌ GHL removeTag failed → ${JSON.stringify(
+          error.response?.data || error.message
+        )}`
       );
       return false;
     }
