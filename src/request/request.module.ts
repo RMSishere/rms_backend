@@ -11,6 +11,7 @@ import { UsersModule } from 'src/users/users.module';
 import { ScheduleJobsModule } from '../scheduleJob/scheduleJob.module';
 import { ScheduleFactory } from 'src/scheduleJob/scheduleJob.factory';
 import { NotificationSubscriptioneModule } from 'src/notificationSubscription/notificationSubscription.module';
+import { GHLModule } from '../ghl/ghl.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { NotificationSubscriptioneModule } from 'src/notificationSubscription/no
     AppointmentModule,
     ZipCodeModule,
     JobReviewModule,
+    GHLModule,
     UsersModule,
     ScheduleJobsModule,
     NotificationSubscriptioneModule,

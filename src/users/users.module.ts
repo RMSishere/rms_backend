@@ -7,12 +7,14 @@ import { UserMiscInfoModule } from '../userMiscInfo/userMiscInfo.module';
 import { HelpMessageModule } from '../helpMessage/helpMessage.module';
 import { ZipCodeSearchModule } from '../zipCodeSearch/zipCodeSearch.module';
 import { NotificationSubscriptioneModule } from 'src/notificationSubscription/notificationSubscription.module';
+import { GHLModule } from '../ghl/ghl.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: 'users', schema: usersSchema }]),
     UserMiscInfoModule,
     HelpMessageModule,
+    GHLModule,
     ZipCodeSearchModule,
     NotificationSubscriptioneModule,
   ],
