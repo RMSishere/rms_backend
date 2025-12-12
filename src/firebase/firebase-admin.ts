@@ -1,23 +1,28 @@
 // src/firebase/firebase-admin.ts
 import * as admin from 'firebase-admin';
-import * as path from 'path';
-import * as fs from 'fs';
 
-// Resolve JSON path ALWAYS from project root
-const serviceAccountPath = path.resolve(
-  __dirname,
-  './runmysale-b68ad-firebase-adminsdk-fbsvc-ec5b0f8416.json'
-);
+const firebaseConfig = {
+  type: "service_account",
+  project_id: process.env.FB_PROJECT_ID,
+  private_key_id: process.env.FB_PRIVATE_KEY_ID,
+  private_key: process.env.FB_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+  client_email: process.env.FB_CLIENT_EMAIL,
+  client_id: process.env.FB_CLIENT_ID,
+  auth_uri: "https://accounts.google.com/o/oauth2/auth",
+  token_uri: "https://oauth2.googleapis.com/token",
+  auth_provider_x509_cert_url: "https://www.googleapis.com/oauth2/v1/certs",
+  client_x509_cert_url: process.env.FB_CLIENT_X509_CERT_URL,
+  universe_domain: "googleapis.com"
+};
 
-if (!fs.existsSync(serviceAccountPath)) {
-  console.error('❌ Firebase JSON file not found at:', serviceAccountPath);
-  throw new Error('Firebase service account JSON missing');
+// Validate
+if (!firebaseConfig.private_key) {
+  console.error("❌ Missing Firebase environment variables");
+  throw new Error("Firebase ENV config missing");
 }
 
-const serviceAccount = require(serviceAccountPath);
-
 admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
+  credential: admin.credential.cert(firebaseConfig as any),
 });
 
 export default admin;
