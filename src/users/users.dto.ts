@@ -38,6 +38,7 @@ export class SubscriptionDto {
 export class UserDto extends BaseDto implements User {
   constructor(user?: User) {
     super(user);
+
     this.firstName = user.firstName;
     this.lastName = user.lastName;
     this.avatar = user.avatar;
@@ -59,7 +60,6 @@ export class UserDto extends BaseDto implements User {
     this.blockedUsers = user.blockedUsers;
     this.deletedAt = user.deletedAt;
     this.facebookProvider = user.facebookProvider;
-    // this.appleProvider = user.appleProvider;
     this.wordpressProvider = user.wordpressProvider;
     this.dob = user.dob;
     this.index = user.index;
@@ -68,16 +68,23 @@ export class UserDto extends BaseDto implements User {
     this.distance = user.distance;
     this.bio = user.bio;
 
-    // ✅ NEW: copy DB enum
+    // ✅ Affiliate status from DB enum
     this.affiliateStatus = user.affiliateStatus;
 
-    // ✅ NEW: friendly status for clients
+    // ✅ Friendly client status
     this.status =
       this.affiliateStatus === 'APPROVED'
         ? 'approved'
         : this.affiliateStatus === 'DENIED'
         ? 'rejected'
         : 'pending';
+
+    // --------------------------------------------------------------------
+    // ✅ NEW FIELDS FOR GHL SYNC
+    // --------------------------------------------------------------------
+    this.ghlContactId = user.ghlContactId;
+    this.ghlCustomerOpportunityId = user.ghlCustomerOpportunityId;
+    this.ghlAffiliateOpportunityId = user.ghlAffiliateOpportunityId;
   }
 
   firstName: string;
@@ -86,8 +93,8 @@ export class UserDto extends BaseDto implements User {
   businessProfile?: BusinessProfile;
   email: string;
   countryCode: string;
-  passwordEncrypted?: string;
   callingCode: string;
+  passwordEncrypted?: string;
   phoneNumber: string;
   zipCode: number;
   role: number;
@@ -109,9 +116,15 @@ export class UserDto extends BaseDto implements User {
   distance?: number;
   bio?: string;
 
-  // ✅ NEW fields in DTO
+  // --------------------------------------------------------------------
+  // NEW FIELDS
+  // --------------------------------------------------------------------
   affiliateStatus?: 'PENDING' | 'APPROVED' | 'DENIED';
   status?: 'pending' | 'approved' | 'rejected';
+
+  ghlContactId?: string;
+  ghlCustomerOpportunityId?: string;
+  ghlAffiliateOpportunityId?: string;
 }
 
 export class User2Dto extends UserDto {

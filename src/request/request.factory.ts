@@ -12,9 +12,11 @@ import { JobUpdate, PaginatedData } from 'src/common/interfaces';
 import { JobReviewDto } from 'src/jobReview/jobReview.dto';
 import { NotificationFactory } from 'src/notification/notification.factory';
 import { UserFactory } from 'src/users/users.factory';
+import { GHLService } from 'src/ghl/ghl.service'; // adjust path
 import { getAgreement, getfullName } from 'src/util';
 import { ZipCodeFactory } from 'src/zipCode/zipCode.factory';
 import { NotificationSubscription } from 'src/lib'; // adjust path if needed
+import { GHL_STAGES, GHL_PIPELINES } from 'src/ghl/ghl.mapper'; // adjust path
 
 import {
   CHARGE_BASIS,
@@ -44,28 +46,29 @@ constructor(
   @InjectModel('counters') public readonly countersModel: Model<Counter>,
   @InjectModel('JobReview') public readonly jobReviewModel: Model<JobReview>,
   @InjectModel('users') public readonly userModel: Model<User>,
-  @InjectModel('NotificationSubscription') public readonly notificationSubscriptionModel: Model<NotificationSubscription>, // <-- ADD THIS LINE
+  @InjectModel('NotificationSubscription') public readonly notificationSubscriptionModel: Model<NotificationSubscription>,
   public notificationfactory: NotificationFactory,
   public appointmentfactory: AppointmentFactory,
   public zipCodeFactory: ZipCodeFactory,
   public userFactory: UserFactory,
   public scheduleFactory: ScheduleFactory,
+  public ghlService: GHLService,     // <-- ADD THIS ✔️
 ) {
   super(countersModel);
 }
+
  twilioClient = new Twilio(
   process.env.TWILIO_ACCOUNT_SID,
   process.env.TWILIO_AUTH_TOKEN,
 );
 
- async createRequest(data: Request, user: User): Promise<Request> {
+async createRequest(data: Request, user: User): Promise<Request> {
   try {
     data.id = await this.generateSequentialId('request');
     data.requesterOwner = user;
     data.createdBy = this.getCreatedBy(user);
-    console.log(user,'data');
+
     const userdata = await this.userModel.findById(user._id);
-    console.log(userdata,'/userererer')
     const plan = getCustomerPlanDetails(userdata.subscription?.type);
 
     if (userdata.subscription.jobRequestCountThisMonth >= plan.jobRequestLimit) {
@@ -77,13 +80,29 @@ constructor(
     });
 
     const admin = await this.userFactory.getAdmin();
-
     data.price = await this.findRequestPrice(data.zip, affiliates.length);
 
     const newRequest = new this.requestModel(data);
     const res = await newRequest.save();
     const request = new RequestDto(res);
 
+    // ----------------------------------------------------
+    // 🟩 GHL: Move Customer → ACTIVE_JOB
+    // ----------------------------------------------------
+    try {
+      if (user.role === USER_ROLES.CLIENT && userdata.ghlCustomerOpportunityId) {
+        await this.userFactory.ghlService.moveStage(
+          userdata.ghlCustomerOpportunityId,
+          GHL_STAGES.CUSTOMERS.ACTIVE_JOB
+        );
+      }
+    } catch (err) {
+      console.error("⚠️ GHL ACTIVE_JOB Error:", err.message);
+    }
+
+    // -------------------------------
+    // NOTIFICATIONS TO AFFILIATES & ADMIN
+    // -------------------------------
     if (request && affiliates && affiliates.length) {
       let requestLabel = '';
 
@@ -95,43 +114,45 @@ constructor(
       const description = "Congrats! You've got a new service request in your area.";
       const adminDescription = `Congrats! There is a new service request in zip code ${request.zip}.`;
 
-      // ✅ Send to affiliates
-      this.notificationfactory.sendNotification(affiliates, NOTIFICATION_TYPES.NEW_JOB, {
-        inApp: {
-          message: { requestId: request.id, title, description },
-        },
-        text: {
-          message: `${title}\n${description}`,
-        },
-        email: {
-          template: MAIL_TEMPLATES.NEW_REQUEST,
-          locals: { title, description },
-        },
-      }).catch(() => null);
-
-      // ✅ Send to admin
-      this.notificationfactory.sendNotification(admin, NOTIFICATION_TYPES.NEW_JOB, {
-        inApp: {
-          message: {
-            requestId: request.id,
-            title,
-            description: adminDescription,
+      // Send to affiliates
+      this.notificationfactory.sendNotification(
+        affiliates,
+        NOTIFICATION_TYPES.NEW_JOB,
+        {
+          inApp: {
+            message: { requestId: request.id, title, description },
           },
-        },
-        text: {
-          message: `${title}\n${adminDescription}`,
-        },
-        email: {
-          template: MAIL_TEMPLATES.NEW_REQUEST,
-          locals: { title, description: adminDescription },
-        },
-      }).catch(() => null);
+          text: {
+            message: `${title}\n${description}`,
+          },
+          email: {
+            template: MAIL_TEMPLATES.NEW_REQUEST,
+            locals: { title, description },
+          },
+        }
+      ).catch(() => null);
 
-//       // ✅ Send to whiteglove email if user has WHITE_GLOVE plan
-//   await sendTemplateEmail('whiteglove@runmysale.com', MAIL_TEMPLATES.NEW_REQUEST, {
-//   title: `White Glove Request - ${requestLabel}`,
-//   description: `A new White Glove request was submitted in zip code ${request.zip} by ${user.firstName} ${user.lastName}.`,
-// });
+      // Send to admins
+      this.notificationfactory.sendNotification(
+        admin,
+        NOTIFICATION_TYPES.NEW_JOB,
+        {
+          inApp: {
+            message: {
+              requestId: request.id,
+              title,
+              description: adminDescription,
+            },
+          },
+          text: {
+            message: `${title}\n${adminDescription}`,
+          },
+          email: {
+            template: MAIL_TEMPLATES.NEW_REQUEST,
+            locals: { title, description: adminDescription },
+          },
+        }
+      ).catch(() => null);
     }
 
     return request;
@@ -139,6 +160,7 @@ constructor(
     throw err;
   }
 }
+
 
 async getAllRequests(params: any, user: User): Promise<PaginatedData> {
   console.log("📥 Params:", params);
@@ -857,59 +879,111 @@ async addJobAgreement(
     }
   }
 
-  async finalizeSale(id: string, user: User): Promise<Request> {
+async finalizeSale(id: string, user: User): Promise<Request> {
+  try {
+    const res = await this.updateRequest(id, { isFinalized: true }, user);
+
+    // -------------------------------------------------------------------
+    // 🟩 GHL SYNC — Move CUSTOMER Opportunity → COMPLETE (Sale Finalized)
+    // -------------------------------------------------------------------
     try {
-      const res = await this.updateRequest(id, { isFinalized: true }, user);
-      const subscriptionIndex = res.requesterOwner.notificationSubscriptions.findIndex(
-        dt => dt.title === NOTIFICATION_TYPES.JOB_STATUS_UPDATES.title,
-      );
-      if (subscriptionIndex >= 0) {
-        // if request owner subscribed for job status updates
-        this.notificationfactory.sendNotification(
-          res.requesterOwner,
-          NOTIFICATION_TYPES.JOB_STATUS_UPDATES,
-          {
-            text: {
-              message: `Congrats! Your sale # ${res.id} has been finalized`,
-            },
-          },
+      const requester = res.requesterOwner;
+
+      if (
+        requester?.role === USER_ROLES.CLIENT &&
+        requester?.ghlCustomerOpportunityId
+      ) {
+        await this.ghlService.moveStage(
+          requester.ghlCustomerOpportunityId,
+          GHL_STAGES.CUSTOMERS.REPEAT_CUSTOMER
         );
       }
-
-      return res;
     } catch (err) {
-      throw err;
+      console.error("⚠️ GHL finalizeSale ERROR:", err.message);
     }
-  }
+    // -------------------------------------------------------------------
 
-  async closeJob(id: string, user: User): Promise<Request> {
-    try {
-      const filter = { id: id, requesterOwner: user };
-      const update = { $set: { status: 'CLOSE' } };
-      const request = await this.requestModel.findOneAndUpdate(filter, update, {
-        new: true,
-      });
+    // Notify requester if subscribed
+    const subscriptionIndex =
+      res.requesterOwner.notificationSubscriptions.findIndex(
+        (dt) => dt.title === NOTIFICATION_TYPES.JOB_STATUS_UPDATES.title
+      );
 
-      this.notificationfactory
-        .sendNotification(
-          [request.requesterOwner, request.hiredAffiliate],
-          NOTIFICATION_TYPES.JOB_STATUS_UPDATES,
-          {
-            text: {
-              message: `The request # ${request.id} has been closed.`,
-            },
+    if (subscriptionIndex >= 0) {
+      this.notificationfactory.sendNotification(
+        res.requesterOwner,
+        NOTIFICATION_TYPES.JOB_STATUS_UPDATES,
+        {
+          text: {
+            message: `Congrats! Your sale # ${res.id} has been finalized`,
           },
-        )
-        .catch(() => null); // discard error
-
-      if (request) {
-        return new RequestDto(request);
-      }
-      throw new InternalServerErrorException();
-    } catch (error) {
-      throw error;
+        }
+      );
     }
+
+    return res;
+  } catch (err) {
+    throw err;
   }
+}
+
+
+async closeJob(id: string, user: User): Promise<Request> {
+  try {
+    const filter = { id: id, requesterOwner: user };
+    const update = { $set: { status: 'CLOSE' } };
+
+    const requestDoc = await this.requestModel.findOneAndUpdate(
+      filter,
+      update,
+      { new: true }
+    );
+
+    if (!requestDoc) {
+      throw new InternalServerErrorException();
+    }
+
+    const request = new RequestDto(requestDoc);
+
+    // -------------------------------------------------------------------
+    // 🟩 GHL SYNC — CUSTOMER JOB CLOSED → MOVE TO LOST / CLOSED
+    // -------------------------------------------------------------------
+    try {
+      const requester = request.requesterOwner;
+
+      if (
+        requester?.role === USER_ROLES.CLIENT &&
+        requester?.ghlCustomerOpportunityId
+      ) {
+        await this.ghlService.moveStage(
+          requester.ghlCustomerOpportunityId,
+          GHL_STAGES.CUSTOMERS.LOST   // <-- Use your actual CLOSED stage constant
+        );
+      }
+    } catch (err) {
+      console.error("⚠️ GHL closeJob ERROR:", err.message);
+    }
+    // -------------------------------------------------------------------
+
+    // Send notification to requester + hired affiliate
+    this.notificationfactory
+      .sendNotification(
+        [request.requesterOwner, request.hiredAffiliate],
+        NOTIFICATION_TYPES.JOB_STATUS_UPDATES,
+        {
+          text: {
+            message: `The request # ${request.id} has been closed.`,
+          },
+        }
+      )
+      .catch(() => null);
+
+    return request;
+  } catch (error) {
+    throw error;
+  }
+}
+
 
   async findRequestPrice(zip: string, count: number): Promise<number> {
     let leadCalculations = [];

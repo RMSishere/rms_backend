@@ -19,6 +19,7 @@ export const requestSchema = new mongoose.Schema(
       ],
       required: true,
     },
+    ghlOpportunityId: { type: String, default: null },
     whereToSell: { type: String, default: null },
     noOfItems: { type: String, default: null },
     typeOfItems: [

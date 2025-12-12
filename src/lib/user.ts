@@ -64,6 +64,12 @@ export interface User extends Base {
   address?: string;
   distance?: number;
 
-  // ✅ NEW: DB enum (PENDING | APPROVED | DENIED)
+  // DB enum
   affiliateStatus?: 'PENDING' | 'APPROVED' | 'DENIED';
+
+  // ✅ REQUIRED FOR GHL CODE
+  ghlContactId?: string | null;
+  ghlAffiliateOpportunityId?: string | null;
+  ghlCustomerOpportunityId?: string | null;
 }
+

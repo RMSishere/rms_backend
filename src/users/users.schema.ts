@@ -52,6 +52,10 @@ export const usersSchema = new mongoose.Schema(
         token: String,
       },
     },
+    ghlContactId: { type: String, default: null },
+    ghlAffiliateOpportunityId: { type: String, default: null },
+    ghlCustomerOpportunityId: { type: String, default: null },
+
     devices: [
       {
         token: { type: String },
