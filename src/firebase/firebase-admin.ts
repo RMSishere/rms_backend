@@ -6,7 +6,7 @@ import * as fs from 'fs';
 // Resolve JSON path ALWAYS from project root
 const serviceAccountPath = path.resolve(
   __dirname,
-  '../../../src/firebase/runmysale-b68ad-firebase-adminsdk-fbsvc-ec5b0f8416.json'
+  './runmysale-b68ad-firebase-adminsdk-fbsvc-ec5b0f8416.json'
 );
 
 if (!fs.existsSync(serviceAccountPath)) {
