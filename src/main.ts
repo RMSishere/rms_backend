@@ -6,6 +6,8 @@ import { WinstonLogger, WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { AppModule } from './app.module';
 import { GLOBAL_PREFIX } from './config';
 import path = require('path');
+import './polyfills/file.polyfill';
+
 const morgan = require('morgan');
 
 // const httpsOptions =
