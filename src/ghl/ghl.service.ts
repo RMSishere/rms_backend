@@ -4,24 +4,40 @@ import axios, { AxiosInstance } from 'axios';
 @Injectable()
 export class GHLService {
   private readonly logger = new Logger(GHLService.name);
-  private client: AxiosInstance;
+
+  private clientV1: AxiosInstance; // Contacts, Tags
+  private clientV2: AxiosInstance; // Opportunities, Pipelines
 
   constructor() {
-    this.client = axios.create({
-      baseURL: 'https://rest.gohighlevel.com/v1',   // ✅ OFFICIAL BASE URL
+    // -----------------------------
+    // V1 CLIENT (contacts, tags)
+    // -----------------------------
+    this.clientV1 = axios.create({
+      baseURL: 'https://rest.gohighlevel.com/v1',
       headers: {
-        Authorization: `Bearer ${process.env.GHL_API_KEY}`, // API KEY (not JWT)
+        Authorization: `Bearer ${process.env.GHL_API_KEY}`,
         Version: '2021-07-28',
         'Content-Type': 'application/json',
       },
     });
 
-    this.logger.log('🔗 GHL Client initialized → https://rest.gohighlevel.com/v1');
+    // -----------------------------
+    // V2 CLIENT (opportunities)
+    // -----------------------------
+    this.clientV2 = axios.create({
+      baseURL: 'https://services.leadconnectorhq.com',
+      headers: {
+        Authorization: `Bearer ${process.env.GHL_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    this.logger.log('🔗 GHL Clients initialized → V1 + V2 Ready');
   }
 
-  // ================================================
-  // LOGGING HELPERS
-  // ================================================
+  // -----------------------------------------
+  // UTIL LOG FUNCTIONS
+  // -----------------------------------------
   private logRequest(method: string, url: string, payload?: any) {
     this.logger.debug(
       `📤 [GHL REQUEST]
@@ -49,16 +65,15 @@ export class GHLService {
     );
   }
 
-  // ================================================
-  // CONTACTS (Upsert)
-  // ================================================
+  // ====================================================
+  // CONTACTS (V1)
+  // ====================================================
   async createOrUpdateContact(user: any) {
     const url = `/contacts/`;
-
     const payload = {
       locationId: process.env.GHL_LOCATION_ID,
-      firstName: user.firstName || '',
-      lastName: user.lastName || '',
+      firstName: user.firstName,
+      lastName: user.lastName,
       email: user.email,
       phone: user.phoneNumber,
       postalCode: user.zipCode,
@@ -70,24 +85,22 @@ export class GHLService {
     const start = Date.now();
 
     try {
-      const res = await this.client.post(url, payload);
+      const res = await this.clientV1.post(url, payload);
       const ms = Date.now() - start;
-
       this.logResponse(url, ms, res.data);
 
       return res.data?.contact?.id || res.data?.id || null;
     } catch (error) {
-      const ms = Date.now() - start;
-      this.logError(url, ms, error);
+      this.logError(url, Date.now() - start, error);
       return null;
     }
   }
 
-  // ================================================
-  // OPPORTUNITIES
-  // ================================================
-  async createOpportunity(contactId: string, pipelineId: string, stageId: string, extra: any = {}) {
-    const url = `/opportunities/`;
+  // ====================================================
+  // OPPORTUNITIES (V2)
+  // ====================================================
+  async createOpportunity(contactId: string, pipelineId: string, stageId: string, extra = {}) {
+    const url = `/opportunities/`; // FULL endpoint = https://services.leadconnectorhq.com/opportunities/
 
     const payload = {
       locationId: process.env.GHL_LOCATION_ID,
@@ -103,15 +116,13 @@ export class GHLService {
     const start = Date.now();
 
     try {
-      const res = await this.client.post(url, payload);
+      const res = await this.clientV2.post(url, payload);
       const ms = Date.now() - start;
-
       this.logResponse(url, ms, res.data);
 
       return res.data?.id || null;
     } catch (error) {
-      const ms = Date.now() - start;
-      this.logError(url, ms, error);
+      this.logError(url, Date.now() - start, error);
       return null;
     }
   }
@@ -123,57 +134,37 @@ export class GHLService {
     const start = Date.now();
 
     try {
-      const res = await this.client.put(url, updates);
-      const ms = Date.now() - start;
+      const res = await this.clientV2.put(url, updates);
+      this.logResponse(url, Date.now() - start, res.data);
 
-      this.logResponse(url, ms, res.data);
       return res.data;
     } catch (error) {
-      const ms = Date.now() - start;
-      this.logError(url, ms, error);
+      this.logError(url, Date.now() - start, error);
       return null;
     }
   }
 
-  async moveStage(opportunityId: string, stageId: string) {
-    const url = `/opportunities/${opportunityId}`;
-    const payload = { stageId };
-
-    this.logRequest('put', url, payload);
-    const start = Date.now();
-
-    try {
-      const res = await this.client.put(url, payload);
-      const ms = Date.now() - start;
-
-      this.logResponse(url, ms, res.data);
-      return true;
-    } catch (error) {
-      const ms = Date.now() - start;
-      this.logError(url, ms, error);
-      return false;
-    }
+  async moveStage(opportunityId: string, newStageId: string) {
+    return this.updateOpportunity(opportunityId, { stageId: newStageId });
   }
 
-  // ================================================
-  // TAGS
-  // ================================================
+  // ====================================================
+  // TAGS (V1)
+  // ====================================================
   async addTag(contactId: string, tag: string) {
     const url = `/contacts/${contactId}/tags/`;
-    const payload = { tags: [tag] };
 
+    const payload = { tags: [tag] };
     this.logRequest('post', url, payload);
     const start = Date.now();
 
     try {
-      const res = await this.client.post(url, payload);
-      const ms = Date.now() - start;
+      const res = await this.clientV1.post(url, payload);
+      this.logResponse(url, Date.now() - start, res.data);
 
-      this.logResponse(url, ms, res.data);
       return true;
     } catch (error) {
-      const ms = Date.now() - start;
-      this.logError(url, ms, error);
+      this.logError(url, Date.now() - start, error);
       return false;
     }
   }
@@ -185,14 +176,12 @@ export class GHLService {
     const start = Date.now();
 
     try {
-      const res = await this.client.delete(url);
-      const ms = Date.now() - start;
+      const res = await this.clientV1.delete(url);
+      this.logResponse(url, Date.now() - start, res.data);
 
-      this.logResponse(url, ms, res.data);
       return true;
     } catch (error) {
-      const ms = Date.now() - start;
-      this.logError(url, ms, error);
+      this.logError(url, Date.now() - start, error);
       return false;
     }
   }
