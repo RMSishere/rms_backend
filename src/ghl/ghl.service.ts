@@ -11,13 +11,13 @@ interface OpportunityExtra {
 export class GHLService {
   private readonly logger = new Logger(GHLService.name);
 
-  private clientV1: AxiosInstance; // Contacts + Tags
-  private clientV2: AxiosInstance; // Opportunities
+  private clientV1: AxiosInstance; // Contacts + Tags API
+  private clientV2: AxiosInstance; // Opportunities API (LeadConnector)
 
   constructor() {
-    // -----------------------------
-    // V1 CLIENT → Contacts & Tags
-    // -----------------------------
+    // ------------------------------------------------
+    // V1 CLIENT (contacts + tags)
+    // ------------------------------------------------
     this.clientV1 = axios.create({
       baseURL: 'https://rest.gohighlevel.com/v1',
       headers: {
@@ -27,23 +27,25 @@ export class GHLService {
       },
     });
 
-    // -----------------------------
-    // V2 CLIENT → Opportunities
-    // -----------------------------
+    // ------------------------------------------------
+    // V2 CLIENT (opportunities)
+    // *** FIXED: Version header added ***
+    // ------------------------------------------------
     this.clientV2 = axios.create({
       baseURL: 'https://services.leadconnectorhq.com',
       headers: {
         Authorization: `Bearer ${process.env.GHL_API_KEY}`,
+        Version: '2021-07-28',  // 🔥 REQUIRED! fixes 401 error
         'Content-Type': 'application/json',
       },
     });
 
-    this.logger.log('🔗 GHL Clients initialized → V1 + V2 Ready');
+    this.logger.log('🔗 GHL Clients initialized → V1 & V2 ready');
   }
 
-  // =====================================================
-  // LOG HELPERS
-  // =====================================================
+  // ------------------------------------------------
+  // LOGGING HELPERS
+  // ------------------------------------------------
   private logRequest(method: string, url: string, payload?: any) {
     this.logger.debug(
       `📤 [GHL REQUEST]
@@ -57,7 +59,7 @@ export class GHLService {
       `📥 [GHL RESPONSE]
 ⬅️  ${url}
 ⏱️  ${ms}ms
-📦 Response: ${JSON.stringify(data)}`
+📦 ${JSON.stringify(data)}`
     );
   }
 
@@ -89,13 +91,12 @@ export class GHLService {
     };
 
     this.logRequest('post', url, payload);
+
     const start = Date.now();
 
     try {
       const res = await this.clientV1.post(url, payload);
-      const ms = Date.now() - start;
-
-      this.logResponse(url, ms, res.data);
+      this.logResponse(url, Date.now() - start, res.data);
 
       return res.data?.contact?.id || res.data?.id || null;
     } catch (error) {
@@ -128,13 +129,12 @@ export class GHLService {
     };
 
     this.logRequest('post', url, payload);
+
     const start = Date.now();
 
     try {
       const res = await this.clientV2.post(url, payload);
-      const ms = Date.now() - start;
-
-      this.logResponse(url, ms, res.data);
+      this.logResponse(url, Date.now() - start, res.data);
 
       return res.data?.id || null;
     } catch (error) {
@@ -147,13 +147,13 @@ export class GHLService {
     const url = `/opportunities/${opportunityId}`;
 
     this.logRequest('put', url, updates);
+
     const start = Date.now();
 
     try {
       const res = await this.clientV2.put(url, updates);
-      const ms = Date.now() - start;
+      this.logResponse(url, Date.now() - start, res.data);
 
-      this.logResponse(url, ms, res.data);
       return res.data;
     } catch (error) {
       this.logError(url, Date.now() - start, error);
@@ -178,9 +178,8 @@ export class GHLService {
 
     try {
       const res = await this.clientV1.post(url, payload);
-      const ms = Date.now() - start;
+      this.logResponse(url, Date.now() - start, res.data);
 
-      this.logResponse(url, ms, res.data);
       return true;
     } catch (error) {
       this.logError(url, Date.now() - start, error);
@@ -192,13 +191,13 @@ export class GHLService {
     const url = `/contacts/${contactId}/tags/${tag}`;
 
     this.logRequest('delete', url);
+
     const start = Date.now();
 
     try {
       const res = await this.clientV1.delete(url);
-      const ms = Date.now() - start;
+      this.logResponse(url, Date.now() - start, res.data);
 
-      this.logResponse(url, ms, res.data);
       return true;
     } catch (error) {
       this.logError(url, Date.now() - start, error);
