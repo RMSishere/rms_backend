@@ -10,7 +10,19 @@
     "outDir": "./dist",
     "baseUrl": "./",
     "paths": {},
-    "incremental": true
+    "incremental": true,
+
+    "allowJs": true,               // <-- IMPORTANT (allows JS polyfills)
+    "esModuleInterop": true,       // <-- Helps with imports for firebase/undici
+    "resolveJsonModule": true      // <-- Allows importing firebase JSON files
   },
-  "exclude": ["node_modules", "dist"]
+
+  "include": [
+    "src/**/*"                     // <-- Ensures JS polyfill file is included
+  ],
+
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
 }

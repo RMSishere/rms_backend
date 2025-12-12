@@ -1,11 +1,9 @@
-// This must be JS to run before Nest starts.
-// Polyfill File API for Node 18 (Heroku crash fix)
-
+// Polyfill File for Node 18 (Heroku fix)
 if (global.File === undefined) {
   class FilePolyfill extends Blob {
-    constructor(chunks, filename, options = {}) {
+    constructor(chunks, name, options = {}) {
       super(chunks, options);
-      this.name = filename;
+      this.name = name;
       this.lastModified = options.lastModified || Date.now();
     }
   }

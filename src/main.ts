@@ -1,5 +1,5 @@
+import './polyfills/file-polyfill';
 require('dotenv').config();
-import './polyfills/node-file-polyfills';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 // import { readFileSync } from 'fs';
