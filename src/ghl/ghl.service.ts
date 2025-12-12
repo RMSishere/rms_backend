@@ -16,31 +16,63 @@ export class GHLService {
       },
     });
 
-    this.logger.log('🔗 GHL Client initialized with baseURL = https://rest.gohighlevel.com/v1');
+    this.logger.log('🔗 GHL Client initialized → https://rest.gohighlevel.com/v1');
+  }
+
+  // Utility method for detailed request logs
+  private logRequest(method: string, url: string, payload?: any) {
+    this.logger.debug(
+      `📤 [GHL REQUEST]
+➡️  ${method.toUpperCase()} ${url}
+📝 Payload: ${JSON.stringify(payload)}`
+    );
+  }
+
+  private logResponse(url: string, ms: number, data: any) {
+    this.logger.debug(
+      `📥 [GHL RESPONSE]
+⬅️  ${url}
+⏱️  Time: ${ms}ms
+📦 Data: ${JSON.stringify(data)}`
+    );
+  }
+
+  private logError(url: string, ms: number, error: any) {
+    this.logger.error(
+      `❌ [GHL ERROR]
+❗ URL: ${url}
+⏱️ Time: ${ms}ms
+💥 Error: ${JSON.stringify(error?.response?.data || error.message)}
+🧾 Stack: ${error.stack || 'N/A'}`
+    );
   }
 
   // =====================================================
-  // CONTACTS (Correct Upsert Method)
+  // CONTACTS (Correct Upsert: POST /contacts/)
   // =====================================================
 
   async createOrUpdateContact(user: any) {
+    const url = `/contacts/`;
+    const payload: any = {
+      locationId: process.env.GHL_LOCATION_ID,
+      firstName: user.firstName || '',
+      lastName: user.lastName || '',
+      email: user.email || undefined,
+      phone: user.phoneNumber || undefined,
+      postalCode: user.zipCode || undefined,
+      tags: user.tags || [],
+      source: 'app',
+    };
+
+    this.logRequest('post', url, payload);
+
+    const start = Date.now();
+
     try {
-      const payload: any = {
-        locationId: process.env.GHL_LOCATION_ID,
-        firstName: user.firstName || '',
-        lastName: user.lastName || '',
-        email: user.email || undefined,
-        phone: user.phoneNumber || undefined,
-        postalCode: user.zipCode || undefined,
-        tags: user.tags || [],
-        source: 'app',
-      };
+      const res = await this.client.post(url, payload);
 
-      this.logger.debug(
-        `📩 GHL Contact Upsert Payload → ${JSON.stringify(payload)}`
-      );
-
-      const res = await this.client.post('/contacts/upsert', payload);
+      const ms = Date.now() - start;
+      this.logResponse(url, ms, res.data);
 
       const contactId =
         res?.data?.contact?.id ||
@@ -52,14 +84,11 @@ export class GHLService {
         return null;
       }
 
-      this.logger.log(`✅ GHL Contact Saved (ID = ${contactId})`);
+      this.logger.log(`✅ Contact Saved → ${contactId}`);
       return contactId;
     } catch (error) {
-      this.logger.error(
-        `❌ GHL createOrUpdateContact failed → ${JSON.stringify(
-          error.response?.data || error.message
-        )}`
-      );
+      const ms = Date.now() - start;
+      this.logError(url, ms, error);
       return null;
     }
   }
@@ -74,89 +103,76 @@ export class GHLService {
     stageId: string,
     extra: any = {}
   ) {
+    const url = `/opportunities/`;
+
+    const payload = {
+      locationId: process.env.GHL_LOCATION_ID,
+      contactId,
+      pipelineId,
+      stageId,
+      name: extra.name || `Lead #${contactId}`,
+      status: extra.status || 'active',
+      ...extra,
+    };
+
+    this.logRequest('post', url, payload);
+    const start = Date.now();
+
     try {
-      if (!contactId) throw new Error('Contact ID missing');
+      const res = await this.client.post(url, payload);
 
-      const payload = {
-        locationId: process.env.GHL_LOCATION_ID,
-        contactId,
-        pipelineId,
-        stageId,
-        name: extra.name || `Lead #${contactId}`,
-        status: extra.status || 'active',
-        ...extra,
-      };
+      const ms = Date.now() - start;
+      this.logResponse(url, ms, res.data);
 
-      this.logger.debug(
-        `📩 GHL Create Opportunity Payload → ${JSON.stringify(payload)}`
-      );
+      const opId = res?.data?.id;
+      if (!opId) return null;
 
-      const res = await this.client.post('/opportunities/', payload);
-      const oppId = res?.data?.id;
-
-      if (!oppId) {
-        this.logger.error('❌ GHL createOpportunity returned no ID');
-        return null;
-      }
-
-      this.logger.log(`✅ Opportunity Created (ID = ${oppId})`);
-      return oppId;
+      this.logger.log(`🎯 Opportunity Created → ${opId}`);
+      return opId;
     } catch (error) {
-      this.logger.error(
-        `❌ GHL createOpportunity failed → ${JSON.stringify(
-          error.response?.data || error.message
-        )}`
-      );
+      const ms = Date.now() - start;
+      this.logError(url, ms, error);
       return null;
     }
   }
 
   async updateOpportunity(opportunityId: string, updates: any) {
+    const url = `/opportunities/${opportunityId}`;
+
+    this.logRequest('put', url, updates);
+    const start = Date.now();
+
     try {
-      if (!opportunityId)
-        throw new Error('updateOpportunity called with NULL ID');
+      const res = await this.client.put(url, updates);
 
-      this.logger.debug(
-        `📩 GHL Update Opportunity (${opportunityId}) → ${JSON.stringify(
-          updates
-        )}`
-      );
+      const ms = Date.now() - start;
+      this.logResponse(url, ms, res.data);
 
-      const res = await this.client.put(
-        `/opportunities/${opportunityId}`,
-        updates
-      );
-
-      return res?.data || null;
+      return res.data;
     } catch (error) {
-      this.logger.error(
-        `❌ GHL updateOpportunity failed → ${JSON.stringify(
-          error.response?.data || error.message
-        )}`
-      );
+      const ms = Date.now() - start;
+      this.logError(url, ms, error);
       return null;
     }
   }
 
   async moveStage(opportunityId: string, newStageId: string) {
+    const url = `/opportunities/${opportunityId}`;
+    const payload = { stageId: newStageId };
+
+    this.logRequest('put', url, payload);
+    const start = Date.now();
+
     try {
-      if (!opportunityId) throw new Error('NULL opportunityId');
+      const res = await this.client.put(url, payload);
 
-      const payload = { stageId: newStageId };
-
-      this.logger.debug(
-        `🔄 GHL Move Stage (${opportunityId}) → stage=${newStageId}`
-      );
-
-      await this.client.put(`/opportunities/${opportunityId}`, payload);
+      const ms = Date.now() - start;
+      this.logResponse(url, ms, res.data);
 
       return true;
     } catch (error) {
-      this.logger.error(
-        `❌ GHL moveStage failed → ${JSON.stringify(
-          error.response?.data || error.message
-        )}`
-      );
+      const ms = Date.now() - start;
+      this.logError(url, ms, error);
       return false;
     }
   }
@@ -166,41 +182,42 @@ export class GHLService {
   // =====================================================
 
   async addTag(contactId: string, tag: string) {
+    const url = `/contacts/${contactId}/tags/`;
+    const payload = { tags: [tag] };
+
+    this.logRequest('post', url, payload);
+    const start = Date.now();
+
     try {
-      if (!contactId) throw new Error('NULL contactId');
+      await this.client.post(url, payload);
 
-      this.logger.debug(`🏷️ Adding Tag "${tag}" to contact ${contactId}`);
-
-      await this.client.post(`/contacts/${contactId}/tags/`, {
-        tags: [tag],
-      });
+      const ms = Date.now() - start;
+      this.logResponse(url, ms, { success: true });
 
       return true;
     } catch (error) {
-      this.logger.error(
-        `❌ GHL addTag failed → ${JSON.stringify(
-          error.response?.data || error.message
-        )}`
-      );
+      const ms = Date.now() - start;
+      this.logError(url, ms, error);
       return false;
     }
   }
 
   async removeTag(contactId: string, tag: string) {
+    const url = `/contacts/${contactId}/tags/${tag}`;
+
+    this.logRequest('delete', url);
+    const start = Date.now();
+
     try {
-      if (!contactId) throw new Error('NULL contactId');
+      await this.client.delete(url);
 
-      this.logger.debug(`🗑️ Removing Tag "${tag}" from contact ${contactId}`);
-
-      await this.client.delete(`/contacts/${contactId}/tags/${tag}`);
+      const ms = Date.now() - start;
+      this.logResponse(url, ms, { success: true });
 
       return true;
     } catch (error) {
-      this.logger.error(
-        `❌ GHL removeTag failed → ${JSON.stringify(
-          error.response?.data || error.message
-        )}`
-      );
+      const ms = Date.now() - start;
+      this.logError(url, ms, error);
       return false;
     }
   }
