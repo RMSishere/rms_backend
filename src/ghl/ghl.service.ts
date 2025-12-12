@@ -8,26 +8,25 @@ export class GHLService {
 
   constructor() {
     this.client = axios.create({
-      baseURL: 'https://services.leadconnectorhq.com', // ✅ Correct Base URL
+      baseURL: 'https://rest.gohighlevel.com/v1',   // ✅ OFFICIAL BASE URL
       headers: {
-        Authorization: `Bearer ${process.env.GHL_API_KEY}`,
+        Authorization: `Bearer ${process.env.GHL_API_KEY}`, // API KEY (not JWT)
         Version: '2021-07-28',
         'Content-Type': 'application/json',
       },
     });
 
-    this.logger.log('🔗 GHL Client initialized → https://services.leadconnectorhq.com');
+    this.logger.log('🔗 GHL Client initialized → https://rest.gohighlevel.com/v1');
   }
 
   // ================================================
-  // REQUEST LOG HELPERS
+  // LOGGING HELPERS
   // ================================================
-
   private logRequest(method: string, url: string, payload?: any) {
     this.logger.debug(
       `📤 [GHL REQUEST]
 ➡️  ${method.toUpperCase()} ${url}
-📝 Payload: ${JSON.stringify(payload)}`
+📝 Payload: ${payload ? JSON.stringify(payload) : '—'}`
     );
   }
 
@@ -35,8 +34,8 @@ export class GHLService {
     this.logger.debug(
       `📥 [GHL RESPONSE]
 ⬅️  ${url}
-⏱️  Time: ${ms}ms
-📦 Data: ${JSON.stringify(data)}`
+⏱️  ${ms}ms
+📦 ${JSON.stringify(data)}`
     );
   }
 
@@ -44,26 +43,25 @@ export class GHLService {
     this.logger.error(
       `❌ [GHL ERROR]
 ❗ URL: ${url}
-⏱️ Time: ${ms}ms
-💥 Error: ${JSON.stringify(error?.response?.data || error.message)}
-🧾 Stack: ${error.stack || 'N/A'}`
+⏱️  ${ms}ms
+💥 ${JSON.stringify(error?.response?.data || error.message)}
+🧾 ${error.stack || 'N/A'}`
     );
   }
 
   // ================================================
   // CONTACTS (Upsert)
   // ================================================
-
   async createOrUpdateContact(user: any) {
     const url = `/contacts/`;
 
-    const payload: any = {
+    const payload = {
       locationId: process.env.GHL_LOCATION_ID,
       firstName: user.firstName || '',
       lastName: user.lastName || '',
-      email: user.email || undefined,
-      phone: user.phoneNumber || undefined,
-      postalCode: user.zipCode || undefined,
+      email: user.email,
+      phone: user.phoneNumber,
+      postalCode: user.zipCode,
       tags: user.tags || [],
       source: 'app',
     };
@@ -74,20 +72,10 @@ export class GHLService {
     try {
       const res = await this.client.post(url, payload);
       const ms = Date.now() - start;
+
       this.logResponse(url, ms, res.data);
 
-      const id =
-        res?.data?.contact?.id ||
-        res?.data?.id ||
-        null;
-
-      if (!id) {
-        this.logger.error('❌ GHL returned NO contact ID');
-        return null;
-      }
-
-      this.logger.log(`✅ Contact Saved → ${id}`);
-      return id;
+      return res.data?.contact?.id || res.data?.id || null;
     } catch (error) {
       const ms = Date.now() - start;
       this.logError(url, ms, error);
@@ -98,13 +86,7 @@ export class GHLService {
   // ================================================
   // OPPORTUNITIES
   // ================================================
-
-  async createOpportunity(
-    contactId: string,
-    pipelineId: string,
-    stageId: string,
-    extra: any = {}
-  ) {
+  async createOpportunity(contactId: string, pipelineId: string, stageId: string, extra: any = {}) {
     const url = `/opportunities/`;
 
     const payload = {
@@ -112,8 +94,8 @@ export class GHLService {
       contactId,
       pipelineId,
       stageId,
-      name: extra.name || `Lead #${contactId}`,
-      status: extra.status || 'active',
+      status: 'active',
+      name: extra.name || `Lead ${contactId}`,
       ...extra,
     };
 
@@ -123,13 +105,10 @@ export class GHLService {
     try {
       const res = await this.client.post(url, payload);
       const ms = Date.now() - start;
+
       this.logResponse(url, ms, res.data);
 
-      const opId = res?.data?.id;
-      if (!opId) return null;
-
-      this.logger.log(`🎯 Opportunity Created → ${opId}`);
-      return opId;
+      return res.data?.id || null;
     } catch (error) {
       const ms = Date.now() - start;
       this.logError(url, ms, error);
@@ -145,10 +124,9 @@ export class GHLService {
 
     try {
       const res = await this.client.put(url, updates);
-
       const ms = Date.now() - start;
-      this.logResponse(url, ms, res.data);
 
+      this.logResponse(url, ms, res.data);
       return res.data;
     } catch (error) {
       const ms = Date.now() - start;
@@ -157,19 +135,18 @@ export class GHLService {
     }
   }
 
-  async moveStage(opportunityId: string, newStageId: string) {
+  async moveStage(opportunityId: string, stageId: string) {
     const url = `/opportunities/${opportunityId}`;
-    const payload = { stageId: newStageId };
+    const payload = { stageId };
 
     this.logRequest('put', url, payload);
     const start = Date.now();
 
     try {
       const res = await this.client.put(url, payload);
-
       const ms = Date.now() - start;
-      this.logResponse(url, ms, res.data);
 
+      this.logResponse(url, ms, res.data);
       return true;
     } catch (error) {
       const ms = Date.now() - start;
@@ -181,7 +158,6 @@ export class GHLService {
   // ================================================
   // TAGS
   // ================================================
-
   async addTag(contactId: string, tag: string) {
     const url = `/contacts/${contactId}/tags/`;
     const payload = { tags: [tag] };
@@ -191,10 +167,9 @@ export class GHLService {
 
     try {
       const res = await this.client.post(url, payload);
-
       const ms = Date.now() - start;
-      this.logResponse(url, ms, res.data);
 
+      this.logResponse(url, ms, res.data);
       return true;
     } catch (error) {
       const ms = Date.now() - start;
@@ -211,10 +186,9 @@ export class GHLService {
 
     try {
       const res = await this.client.delete(url);
-
       const ms = Date.now() - start;
-      this.logResponse(url, ms, res.data);
 
+      this.logResponse(url, ms, res.data);
       return true;
     } catch (error) {
       const ms = Date.now() - start;
