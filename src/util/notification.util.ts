@@ -1,6 +1,6 @@
 // src/util/notification.util.ts
 import admin from '../firebase/firebase-admin'; // firebase-admin.ts file
-import * as moment from 'moment-timezone'; // FIXED import ✔
+import moment from 'moment-timezone';
 
 export interface PushPayload {
   title: string;
