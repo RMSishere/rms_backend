@@ -1,4 +1,4 @@
-import * as mongoose from 'mongoose';
+import mongoose from 'mongoose';
 import { SCHEDULE_JOB_TYPES } from 'src/config';
 
 export const scheduleJobSchema = new mongoose.Schema(

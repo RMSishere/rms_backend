@@ -1,4 +1,4 @@
-import * as mongoose from 'mongoose';
+import mongoose from 'mongoose';
 import { CHARGE_BASIS } from 'src/config';
 
 // Sub-schema for paymentWay

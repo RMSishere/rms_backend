@@ -1,4 +1,4 @@
-import * as mongoose from 'mongoose';
+import mongoose from 'mongoose';
 import { USER_ROLES } from 'src/config';
 
 export const notificationSubscriptionSchema = new mongoose.Schema({

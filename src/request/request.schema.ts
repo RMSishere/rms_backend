@@ -1,4 +1,4 @@
-import * as mongoose from 'mongoose';
+import mongoose from 'mongoose';
 import { REQUEST_STATUS, CHARGE_BASIS } from '../config';
 import { requestAgreementSchema } from './requestAgreement.schema';
 

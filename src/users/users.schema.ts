@@ -1,4 +1,4 @@
-import * as mongoose from 'mongoose';
+import mongoose from 'mongoose';
 import { notificationSubscriptionSchema } from '../notificationSubscription/notificationSubscription.schema';
 import { businessProfileSchema } from './businessProfile.schema';
 import { USER_ROLES } from 'src/config';

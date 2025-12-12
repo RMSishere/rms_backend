@@ -1,4 +1,4 @@
-import * as mongoose from 'mongoose';
+import mongoose from 'mongoose';
 import { requestSchema } from 'src/request/request.schema';
 import { PAYMENT_TYPES } from '../config'
 

@@ -1,4 +1,4 @@
-import * as mongoose from 'mongoose';
+import mongoose from 'mongoose';
 
 export const helpMessageSchema = new mongoose.Schema({
   id: { type: String, required: true, unique: true },

@@ -1,4 +1,4 @@
-import * as mongoose from 'mongoose';
+import mongoose from 'mongoose';
 import { usersSchema } from 'src/users/users.schema';
 import { requestSchema } from 'src/request/request.schema';
 

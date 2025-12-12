@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { FilterQuery, Model, Types } from 'mongoose';
-import * as mongoose from 'mongoose';
+import mongoose from 'mongoose';
 
 import { PaginatedData } from 'src/common/interfaces';
 import { SERVICES } from 'src/config/services';
