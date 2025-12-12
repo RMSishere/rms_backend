@@ -6,7 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import * as mongoose from 'mongoose';
+import mongoose from 'mongoose';
 import { Model } from 'mongoose';
 import { APIMessage, APIMessageTypes } from 'src/common/dto';
 import { GHL_PIPELINES, GHL_STAGES } from '../ghl/ghl.mapper';
@@ -23,7 +23,7 @@ import {
 } from 'src/util';
 import { getLatLongFromZipcode } from 'src/util/geo';
 import { v4 as randomUUID } from 'uuid';
-import * as sgMail from '@sendgrid/mail';
+import sgMail from '@sendgrid/mail';
 import { Device } from 'src/util/pushNotification';
 import { sendTemplateEmail } from 'src/util/sendMail';
 import { sendBulkTextMessage, twilioVerifyService } from 'src/util/twilio';
