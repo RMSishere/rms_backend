@@ -212,7 +212,7 @@ async addUser(data: User): Promise<User | APIMessage> {
     // Notification Subscriptions
     const subscriptions =
       await this.notificationSubscriptionFactory.getAllNotificationSubscriptions(
-        {},
+        {} ,
         data,
       );
 
@@ -260,9 +260,11 @@ async addUser(data: User): Promise<User | APIMessage> {
         }
       }
 
-      // 3️⃣ Create Customer Opportunity (NEW LEAD)
-      if (ghlContactId) {
-        const oppId = await this.ghlService.createOpportunity(
+      // 3️⃣ Check if the contact already has an existing opportunity
+      let oppId = savedUser.ghlCustomerOpportunityId;
+      if (!oppId) {
+        // 4️⃣ If no opportunity exists, create one
+        oppId = await this.ghlService.createOpportunity(
           ghlContactId,
           GHL_PIPELINES.CUSTOMERS,
           { name: `${savedUser.firstName} ${savedUser.lastName}` }
@@ -278,6 +280,8 @@ async addUser(data: User): Promise<User | APIMessage> {
           );
           savedUser.ghlCustomerOpportunityId = oppId;
         }
+      } else {
+        console.log('⚠️ Existing opportunity found, skipping creation.');
       }
 
       console.log('✅ GHL Sync Completed for addUser()');
@@ -345,6 +349,7 @@ async addUser(data: User): Promise<User | APIMessage> {
     throw err;
   }
 }
+
 
 
 
