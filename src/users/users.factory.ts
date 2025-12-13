@@ -2231,33 +2231,12 @@ async createBusinessProfile(
       }
 
       // -----------------------------
-      // 2️⃣ Add Tags Based on User Role/Status
+      // 2️⃣ Add Tags Based on Affiliate Status
       // -----------------------------
-      const tagsToAdd = [];
+      const tagsToAdd = ['affiliate_active']; // Hardcoded affiliate_active tag
 
-      // Tags for different user types (role-based)
-      if (updatedUser.role === USER_ROLES.AFFILIATE) {
-        tagsToAdd.push('affiliate_active');
-        tagsToAdd.push('affiliate_approved');
-      }
+  
 
-      if (updatedUser.role === USER_ROLES.CUSTOMER) {
-        tagsToAdd.push('customer - new');
-      }
-
-      // Add more tags based on user status or business profile attributes
-      if (updatedUser.backgroundCheck === 'passed') {
-        tagsToAdd.push('background_check_passed');
-      }
-
-      if (updatedUser.role === USER_ROLES.AFFILIATE && updatedUser.subscriptionStatus === 'pending') {
-        tagsToAdd.push('affiliate_approved_pending_subscription');
-      }
-
-      // Check for other possible tags like background check sent, etc.
-      if (updatedUser.backgroundCheckStatus === 'sent') {
-        tagsToAdd.push('background_check_sent');
-      }
 
       // Add the tags to GHL contact
       for (const tag of tagsToAdd) {
@@ -2268,14 +2247,13 @@ async createBusinessProfile(
       }
 
       // -----------------------------
-      // 3️⃣ Create/Update Opportunity Based on Role
+      // 3️⃣ Create/Update Opportunity for Affiliate
       // -----------------------------
       if (updatedUser.role === USER_ROLES.AFFILIATE && ghlContactId) {
         let oppId = updatedUser.ghlAffiliateOpportunityId;
 
         // 4️⃣ Create opportunity if missing
         if (!oppId) {
-          // ✅ Fixed TS2554: Only 3 arguments passed
           oppId = await this.ghlService.createOpportunity(
             ghlContactId,
             GHL_PIPELINES.AFFILIATES,
@@ -2313,28 +2291,6 @@ async createBusinessProfile(
         );
       }
 
-      // For customers, create an opportunity if it doesn't exist
-      if (updatedUser.role === USER_ROLES.CUSTOMER && ghlContactId) {
-        let oppId = updatedUser.ghlCustomerOpportunityId;
-
-        if (!oppId) {
-          oppId = await this.ghlService.createOpportunity(
-            ghlContactId,
-            GHL_PIPELINES.CUSTOMERS,
-            {
-              name: `${updatedUser.firstName} ${updatedUser.lastName}`,
-            }
-          );
-
-          if (oppId) {
-            await this.usersModel.updateOne(
-              { _id: updatedUser._id },
-              { $set: { ghlCustomerOpportunityId: oppId } },
-            );
-            updatedUser.ghlCustomerOpportunityId = oppId;
-          }
-        }
-      }
     } catch (err) {
       console.error('⚠️ GHL ERROR createBusinessProfile:', err?.message || err);
     }
@@ -2354,6 +2310,8 @@ async createBusinessProfile(
     throw err;
   }
 }
+
+
 
 
 
