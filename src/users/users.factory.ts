@@ -594,11 +594,16 @@ async addUser2(data: any): Promise<User | APIMessage> {
         const oppId = await this.ghlService.createOpportunity(
           ghlContactId,
           GHL_PIPELINES.AFFILIATES,
-          GHL_STAGES.AFFILIATES.NEW_APPLICATION,
-          { name: `${savedUser.firstName} ${savedUser.lastName}` }
+          { name: `${savedUser.firstName} ${savedUser.lastName}` } // ✅ extra object only
         );
 
         if (oppId) {
+          // Move stage separately
+          await this.ghlService.moveStage(
+            oppId,
+            GHL_STAGES.AFFILIATES.NEW_APPLICATION
+          );
+
           await this.usersModel.updateOne(
             { _id: savedUser._id },
             { $set: { ghlAffiliateOpportunityId: oppId } }
@@ -621,6 +626,7 @@ async addUser2(data: any): Promise<User | APIMessage> {
     throw err;
   }
 }
+
 
 
 
@@ -905,11 +911,9 @@ async login(
       // 🟦 GHL SYNC — CONTACT + CUSTOMER OPPORTUNITY
       // =====================================================
       try {
-        // 1️⃣ Ensure contact exists or update it
         const ghlContactId = await this.ghlService.createOrUpdateContact(updatedUser);
 
         if (ghlContactId) {
-          // Save into DB if missing
           if (!updatedUser.ghlContactId) {
             await this.usersModel.updateOne(
               { _id: updatedUser._id },
@@ -919,34 +923,33 @@ async login(
           updatedUser.ghlContactId = ghlContactId;
         }
 
-        // ----------------------------------------------------
-        // Only CLIENTS move in the Customer pipeline
-        // ----------------------------------------------------
         if (updatedUser.role === USER_ROLES.CLIENT && updatedUser.ghlContactId) {
-
-          // 2️⃣ Create opportunity if missing
+          // Create opportunity if missing
           if (!updatedUser.ghlCustomerOpportunityId) {
             const oppId = await this.ghlService.createOpportunity(
               updatedUser.ghlContactId,
               GHL_PIPELINES.CUSTOMERS,
-              GHL_STAGES.CUSTOMERS.DOWNLOADED_APP,
-              { name: `${updatedUser.firstName} ${updatedUser.lastName}` }
+              { name: `${updatedUser.firstName} ${updatedUser.lastName}` } // ✅ extra object
             );
 
             if (oppId) {
+              // Move to desired stage
+              await this.ghlService.moveStage(
+                oppId,
+                GHL_STAGES.CUSTOMERS.DOWNLOADED_APP
+              );
+
               await this.usersModel.updateOne(
                 { _id: updatedUser._id },
                 { $set: { ghlCustomerOpportunityId: oppId } }
               );
               updatedUser.ghlCustomerOpportunityId = oppId;
             }
-          }
-
-          // 3️⃣ Move stage → DOWNLOADED_APP (only once)
-          if (updatedUser.ghlCustomerOpportunityId) {
+          } else {
+            // Move stage if opportunity already exists
             await this.ghlService.moveStage(
               updatedUser.ghlCustomerOpportunityId,
-              GHL_STAGES.CUSTOMERS.DOWNLOADED_APP,
+              GHL_STAGES.CUSTOMERS.DOWNLOADED_APP
             );
           }
         }
@@ -987,7 +990,6 @@ async login(
             updatedWPUser.ghlContactId = ghlContactId;
           }
 
-          // WP users also enter CUSTOMER pipeline
           if (
             updatedWPUser.role === USER_ROLES.CLIENT &&
             updatedWPUser.ghlContactId
@@ -996,17 +998,27 @@ async login(
               const oppId = await this.ghlService.createOpportunity(
                 updatedWPUser.ghlContactId,
                 GHL_PIPELINES.CUSTOMERS,
-                GHL_STAGES.CUSTOMERS.DOWNLOADED_APP,
                 { name: `${updatedWPUser.firstName} ${updatedWPUser.lastName}` }
               );
 
               if (oppId) {
+                await this.ghlService.moveStage(
+                  oppId,
+                  GHL_STAGES.CUSTOMERS.DOWNLOADED_APP
+                );
+
                 await this.usersModel.updateOne(
                   { _id: updatedWPUser._id },
                   { $set: { ghlCustomerOpportunityId: oppId } }
                 );
                 updatedWPUser.ghlCustomerOpportunityId = oppId;
               }
+            } else {
+              // Move stage if opportunity exists
+              await this.ghlService.moveStage(
+                updatedWPUser.ghlCustomerOpportunityId,
+                GHL_STAGES.CUSTOMERS.DOWNLOADED_APP
+              );
             }
           }
         } catch (err) {
@@ -1036,6 +1048,7 @@ async login(
     throw err;
   }
 }
+
 
 
 
@@ -1813,17 +1826,18 @@ async deleteAffiliateProfileById(
 }
 
 
-
-async denyAffiliateById(id: string): Promise<{ success: boolean; message: string }> {
+async denyAffiliateById(
+  id: string
+): Promise<{ success: boolean; message: string }> {
   try {
+    // 1️⃣ Fetch user document
     const userDoc = await this.usersModel.findById(id);
-
     if (!userDoc) {
       return { success: false, message: 'User not found; status not updated' };
     }
 
-    // Update local DB
-    await this.usersModel.findByIdAndUpdate(
+    // 2️⃣ Update local DB → DENIED
+    const updatedUser = await this.usersModel.findByIdAndUpdate(
       id,
       {
         $set: {
@@ -1832,55 +1846,78 @@ async denyAffiliateById(id: string): Promise<{ success: boolean; message: string
           'businessProfile.approvedDate': null,
         },
       },
-      { new: true }
+      { new: true } // ✅ return updated doc
     );
 
-    // -----------------------------
-    // 🟩 GHL AFFILIATE → INACTIVE
-    // -----------------------------
+    if (!updatedUser) {
+      return { success: false, message: 'Failed to update user status' };
+    }
+
+    // 3️⃣ GHL Affiliate → INACTIVE
     try {
-      if (userDoc.role === USER_ROLES.AFFILIATE) {
+      if (updatedUser.role === USER_ROLES.AFFILIATE) {
+        // Ensure GHL contact exists
         const ghlContactId =
-          userDoc.ghlContactId ||
+          updatedUser.ghlContactId ||
           (await this.ghlService.createOrUpdateContact({
-            email: userDoc.email,
-            phone: userDoc.phoneNumber,
-            firstName: userDoc.firstName,
-            lastName: userDoc.lastName,
+            email: updatedUser.email,
+            phone: updatedUser.phoneNumber,
+            firstName: updatedUser.firstName,
+            lastName: updatedUser.lastName,
           }));
 
-        let oppId = userDoc.ghlAffiliateOpportunityId;
+        if (ghlContactId && !updatedUser.ghlContactId) {
+          await this.usersModel.updateOne(
+            { _id: updatedUser._id },
+            { $set: { ghlContactId } }
+          );
+          updatedUser.ghlContactId = ghlContactId;
+        }
 
+        // Ensure affiliate opportunity exists
+        let oppId = updatedUser.ghlAffiliateOpportunityId;
         if (!oppId) {
+          // ✅ Updated: Only 3 arguments for createOpportunity
           oppId = await this.ghlService.createOpportunity(
             ghlContactId,
             GHL_PIPELINES.AFFILIATES,
-            GHL_STAGES.AFFILIATES.NEW_APPLICATION,
-            { name: `${userDoc.firstName} ${userDoc.lastName}` }
+            { name: `${updatedUser.firstName} ${updatedUser.lastName}` } // merged into last arg
           );
 
-          await this.usersModel.updateOne(
-            { _id: userDoc._id },
-            { $set: { ghlAffiliateOpportunityId: oppId } },
-          );
-
-          userDoc.ghlAffiliateOpportunityId = oppId;
+          if (oppId) {
+            await this.usersModel.updateOne(
+              { _id: updatedUser._id },
+              { $set: { ghlAffiliateOpportunityId: oppId } }
+            );
+            updatedUser.ghlAffiliateOpportunityId = oppId;
+          }
         }
 
-        await this.ghlService.moveStage(
-          userDoc.ghlAffiliateOpportunityId,
-          GHL_STAGES.AFFILIATES.INACTIVE
-        );
+        // Move opportunity stage → INACTIVE
+        if (updatedUser.ghlAffiliateOpportunityId) {
+          await this.ghlService.moveStage(
+            updatedUser.ghlAffiliateOpportunityId,
+            GHL_STAGES.AFFILIATES.INACTIVE
+          );
+        }
       }
-    } catch (err) {
-      console.error('⚠️ GHL denyAffiliateById ERROR:', err.message);
+    } catch (err: any) {
+      console.error(
+        '⚠️ GHL denyAffiliateById ERROR:',
+        err?.message || err
+      );
     }
 
     return { success: true, message: 'Affiliate status set to DENIED' };
-  } catch (err) {
+  } catch (err: any) {
+    console.error('[denyAffiliateById] Unexpected error:', err?.message || err);
     throw err;
   }
 }
+
+
+
+
 
 
 
@@ -2042,6 +2079,9 @@ async createBusinessProfile(
   user: User,
 ): Promise<User | APIMessage> {
   try {
+    // -----------------------------
+    // Terms Acceptance Check
+    // -----------------------------
     if (!data.termsAccepted) {
       return new APIMessage(
         'Please accept terms and conditions!',
@@ -2049,9 +2089,9 @@ async createBusinessProfile(
       );
     }
 
-    // --------------------------
+    // -----------------------------
     // ZIP + SERVICE COVERAGE LOGIC
-    // --------------------------
+    // -----------------------------
     if (
       data.serviceCoverageRadius > 0 &&
       data.areaServices &&
@@ -2065,29 +2105,29 @@ async createBusinessProfile(
       data.nearByZipCodes = res.nearByZipCodes;
     }
 
-    // --------------------------
-    // UPDATE USER PROFILE
-    // --------------------------
+    // -----------------------------
+    // Update User Profile
+    // -----------------------------
     const updatedUser = (await this.updateUserData(
       { businessProfile: data },
       user,
     )) as User;
 
     if (updatedUser?._id) {
+      // Send welcome message for new affiliates
       await this.sendWelcomeText(updatedUser);
 
-      // WordPress sync
+      // WordPress Sync (async, non-blocking)
       this.syncAffiliateProfileToWP(updatedUser, updatedUser.businessProfile).catch(
-        (e) =>
-          console.error('[WP SYNC][createBusinessProfile] failed:', e?.message || e),
+        (e) => console.error('[WP SYNC][createBusinessProfile] failed:', e?.message || e),
       );
     }
 
-    // ======================================================
-    // 🟩 GHL SYNC: AFFILIATE BUSINESS PROFILE SUBMISSION
-    // ======================================================
+    // -----------------------------
+    // 🟩 GHL SYNC: AFFILIATE BUSINESS PROFILE
+    // -----------------------------
     try {
-      // 1️⃣ Ensure a GHL contact exists
+      // 1️⃣ Ensure GHL contact exists
       const ghlContactId =
         updatedUser.ghlContactId ||
         (await this.ghlService.createOrUpdateContact({
@@ -2097,7 +2137,6 @@ async createBusinessProfile(
           lastName: updatedUser.lastName,
         }));
 
-      // Save contactId if new
       if (ghlContactId && !updatedUser.ghlContactId) {
         await this.usersModel.updateOne(
           { _id: updatedUser._id },
@@ -2107,16 +2146,19 @@ async createBusinessProfile(
       }
 
       // Only affiliates move through the affiliate pipeline
-      if (updatedUser.role === USER_ROLES.AFFILIATE) {
+      if (updatedUser.role === USER_ROLES.AFFILIATE && ghlContactId) {
         let oppId = updatedUser.ghlAffiliateOpportunityId;
 
-        // 2️⃣ Create opportunity only if missing
+        // 2️⃣ Create opportunity if missing
         if (!oppId) {
+          // ✅ Fixed TS2554: Only 3 arguments passed
           oppId = await this.ghlService.createOpportunity(
             ghlContactId,
             GHL_PIPELINES.AFFILIATES,
-            GHL_STAGES.AFFILIATES.NEW_APPLICATION,
-            { name: `${updatedUser.firstName} ${updatedUser.lastName}` }
+            { 
+              stage: GHL_STAGES.AFFILIATES.NEW_APPLICATION,
+              name: `${updatedUser.firstName} ${updatedUser.lastName}`
+            }
           );
 
           if (oppId) {
@@ -2147,7 +2189,7 @@ async createBusinessProfile(
         );
       }
     } catch (err) {
-      console.error('⚠️ GHL ERROR createBusinessProfile:', err.message);
+      console.error('⚠️ GHL ERROR createBusinessProfile:', err?.message || err);
     }
 
     return updatedUser;
@@ -2155,6 +2197,8 @@ async createBusinessProfile(
     throw err;
   }
 }
+
+
 
 
 
@@ -2233,17 +2277,20 @@ async updateBusinessProfile(
         let oppId = updatedUser.ghlAffiliateOpportunityId;
 
         // 2️⃣ Create opportunity if missing
-        if (!oppId) {
+        if (!oppId && ghlContactId) {
           oppId = await this.ghlService.createOpportunity(
             ghlContactId,
             GHL_PIPELINES.AFFILIATES,
-            GHL_STAGES.AFFILIATES.NEW_APPLICATION,
-            {
-              name: `${updatedUser.firstName} ${updatedUser.lastName}`,
-            },
+            { name: `${updatedUser.firstName} ${updatedUser.lastName}` } // ✅ extra object only
           );
 
           if (oppId) {
+            // Move stage separately
+            await this.ghlService.moveStage(
+              oppId,
+              GHL_STAGES.AFFILIATES.NEW_APPLICATION,
+            );
+
             await this.usersModel.updateOne(
               { _id: updatedUser._id },
               { $set: { ghlAffiliateOpportunityId: oppId } },
@@ -2271,7 +2318,7 @@ async updateBusinessProfile(
         );
       }
     } catch (err) {
-      console.error('⚠️ GHL ERROR updateBusinessProfile:', err.message);
+      console.error('⚠️ GHL ERROR updateBusinessProfile:', err?.message || err);
     }
 
     return updatedUser;
@@ -2279,6 +2326,7 @@ async updateBusinessProfile(
     throw err;
   }
 }
+
 
 
 
@@ -2388,7 +2436,7 @@ private async syncAffiliateProfileToWP(user: User, bp: BusinessProfile): Promise
 
 
 
-async approveBusinessProfile(id: string, user: User): Promise<User> {
+async approveBusinessProfile(id: string, user: User): Promise<UserDto> {
   try {
     const filter = { id };
     const newValue = {
@@ -2402,6 +2450,10 @@ async approveBusinessProfile(id: string, user: User): Promise<User> {
       newValue,
       { new: true },
     );
+
+    if (!updatedUser) {
+      throw new Error('User not found');
+    }
 
     const res = new UserDto(updatedUser);
 
@@ -2431,15 +2483,20 @@ async approveBusinessProfile(id: string, user: User): Promise<User> {
         // 2️⃣ Ensure opportunity exists
         let oppId = updatedUser.ghlAffiliateOpportunityId;
 
-        if (!oppId) {
+        if (!oppId && ghlContactId) {
           oppId = await this.ghlService.createOpportunity(
             ghlContactId,
             GHL_PIPELINES.AFFILIATES,
-            GHL_STAGES.AFFILIATES.NEW_APPLICATION,
-            { name: `${updatedUser.firstName} ${updatedUser.lastName}` },
+            { name: `${updatedUser.firstName} ${updatedUser.lastName}` } // ✅ only 3 args
           );
 
           if (oppId) {
+            // Move stage to NEW_APPLICATION separately
+            await this.ghlService.moveStage(
+              oppId,
+              GHL_STAGES.AFFILIATES.NEW_APPLICATION,
+            );
+
             await this.usersModel.updateOne(
               { _id: updatedUser._id },
               { $set: { ghlAffiliateOpportunityId: oppId } },
@@ -2449,13 +2506,15 @@ async approveBusinessProfile(id: string, user: User): Promise<User> {
         }
 
         // 3️⃣ Move stage → APPROVED
-        await this.ghlService.moveStage(
-          updatedUser.ghlAffiliateOpportunityId,
-          GHL_STAGES.AFFILIATES.APPROVED,
-        );
+        if (updatedUser.ghlAffiliateOpportunityId) {
+          await this.ghlService.moveStage(
+            updatedUser.ghlAffiliateOpportunityId,
+            GHL_STAGES.AFFILIATES.APPROVED,
+          );
+        }
       }
     } catch (err) {
-      console.error('⚠️ GHL approveBusinessProfile ERROR:', err.message);
+      console.error('⚠️ GHL approveBusinessProfile ERROR:', err?.message || err);
     }
 
     return res;
@@ -2465,7 +2524,8 @@ async approveBusinessProfile(id: string, user: User): Promise<User> {
 }
 
 
-async approveBusinessProfile2(phoneNumber: string, adminUser: User): Promise<User> {
+
+async approveBusinessProfile2(phoneNumber: string, adminUser: User): Promise<UserDto> {
   try {
     const existingUser = await this.usersModel.findOne({ phoneNumber });
 
@@ -2510,15 +2570,21 @@ async approveBusinessProfile2(phoneNumber: string, adminUser: User): Promise<Use
 
         let oppId = updatedUser.ghlAffiliateOpportunityId;
 
-        if (!oppId) {
+        // 1️⃣ Create opportunity if missing
+        if (!oppId && ghlContactId) {
           oppId = await this.ghlService.createOpportunity(
             ghlContactId,
             GHL_PIPELINES.AFFILIATES,
-            GHL_STAGES.AFFILIATES.NEW_APPLICATION,
-            { name: `${updatedUser.firstName} ${updatedUser.lastName}` },
+            { name: `${updatedUser.firstName} ${updatedUser.lastName}` } // ✅ only 3 args
           );
 
           if (oppId) {
+            // Move stage to NEW_APPLICATION separately
+            await this.ghlService.moveStage(
+              oppId,
+              GHL_STAGES.AFFILIATES.NEW_APPLICATION,
+            );
+
             await this.usersModel.updateOne(
               { _id: updatedUser._id },
               { $set: { ghlAffiliateOpportunityId: oppId } },
@@ -2527,13 +2593,16 @@ async approveBusinessProfile2(phoneNumber: string, adminUser: User): Promise<Use
           }
         }
 
-        await this.ghlService.moveStage(
-          updatedUser.ghlAffiliateOpportunityId,
-          GHL_STAGES.AFFILIATES.APPROVED,
-        );
+        // 2️⃣ Move stage → APPROVED
+        if (updatedUser.ghlAffiliateOpportunityId) {
+          await this.ghlService.moveStage(
+            updatedUser.ghlAffiliateOpportunityId,
+            GHL_STAGES.AFFILIATES.APPROVED,
+          );
+        }
       }
     } catch (err) {
-      console.error('⚠️ GHL approveBusinessProfile2 ERROR:', err.message);
+      console.error('⚠️ GHL approveBusinessProfile2 ERROR:', err?.message || err);
     }
 
     return new UserDto(updatedUser);
@@ -2541,6 +2610,7 @@ async approveBusinessProfile2(phoneNumber: string, adminUser: User): Promise<Use
     throw err;
   }
 }
+
 
 
 // adjust import as needed
@@ -2590,15 +2660,21 @@ async approveBusinessProfileByIdOnly(
 
         let oppId = updatedUser.ghlAffiliateOpportunityId;
 
-        if (!oppId) {
+        // 1️⃣ Create opportunity if missing
+        if (!oppId && ghlContactId) {
           oppId = await this.ghlService.createOpportunity(
             ghlContactId,
             GHL_PIPELINES.AFFILIATES,
-            GHL_STAGES.AFFILIATES.NEW_APPLICATION,
-            { name: `${updatedUser.firstName} ${updatedUser.lastName}` },
+            { name: `${updatedUser.firstName} ${updatedUser.lastName}` } // ✅ extra object only
           );
 
           if (oppId) {
+            // Move stage to NEW_APPLICATION separately
+            await this.ghlService.moveStage(
+              oppId,
+              GHL_STAGES.AFFILIATES.NEW_APPLICATION,
+            );
+
             await this.usersModel.updateOne(
               { _id: updatedUser._id },
               { $set: { ghlAffiliateOpportunityId: oppId } },
@@ -2607,20 +2683,27 @@ async approveBusinessProfileByIdOnly(
           }
         }
 
-        await this.ghlService.moveStage(
-          updatedUser.ghlAffiliateOpportunityId,
-          GHL_STAGES.AFFILIATES.APPROVED
-        );
+        // 2️⃣ Move stage → APPROVED
+        if (updatedUser.ghlAffiliateOpportunityId) {
+          await this.ghlService.moveStage(
+            updatedUser.ghlAffiliateOpportunityId,
+            GHL_STAGES.AFFILIATES.APPROVED,
+          );
+        }
       }
     } catch (err) {
-      console.error('⚠️ GHL approveBusinessProfileByIdOnly ERROR:', err.message);
+      console.error(
+        '⚠️ GHL approveBusinessProfileByIdOnly ERROR:',
+        err?.message || err,
+      );
     }
 
     return { success: true, data: new UserDto(updatedUser) };
   } catch (err) {
-    return { success: false, error: err.message };
+    return { success: false, error: err?.message || 'Unexpected error' };
   }
 }
+
 
 
 async approveBusinessProfileByIdOnlyy(id: string): Promise<{ success: boolean; data?: UserDto; error?: string }> {
@@ -2697,15 +2780,21 @@ async approveBusinessProfileByEmailOnly(
 
         let oppId = updatedUser.ghlAffiliateOpportunityId;
 
-        if (!oppId) {
+        // 1️⃣ Create opportunity if missing
+        if (!oppId && ghlContactId) {
           oppId = await this.ghlService.createOpportunity(
             ghlContactId,
             GHL_PIPELINES.AFFILIATES,
-            GHL_STAGES.AFFILIATES.NEW_APPLICATION,
-            { name: `${updatedUser.firstName} ${updatedUser.lastName}` },
+            { name: `${updatedUser.firstName} ${updatedUser.lastName}` } // ✅ extra object only
           );
 
           if (oppId) {
+            // Move stage to NEW_APPLICATION separately
+            await this.ghlService.moveStage(
+              oppId,
+              GHL_STAGES.AFFILIATES.NEW_APPLICATION,
+            );
+
             await this.usersModel.updateOne(
               { _id: updatedUser._id },
               { $set: { ghlAffiliateOpportunityId: oppId } },
@@ -2714,20 +2803,27 @@ async approveBusinessProfileByEmailOnly(
           }
         }
 
-        await this.ghlService.moveStage(
-          updatedUser.ghlAffiliateOpportunityId,
-          GHL_STAGES.AFFILIATES.APPROVED
-        );
+        // 2️⃣ Move stage → APPROVED
+        if (updatedUser.ghlAffiliateOpportunityId) {
+          await this.ghlService.moveStage(
+            updatedUser.ghlAffiliateOpportunityId,
+            GHL_STAGES.AFFILIATES.APPROVED,
+          );
+        }
       }
     } catch (err) {
-      console.error('⚠️ GHL approveBusinessProfileByEmailOnly ERROR:', err.message);
+      console.error(
+        '⚠️ GHL approveBusinessProfileByEmailOnly ERROR:',
+        err?.message || err,
+      );
     }
 
     return { success: true, data: new UserDto(updatedUser) };
   } catch (err) {
-    return { success: false, error: err.message || 'Unexpected error' };
+    return { success: false, error: err?.message || 'Unexpected error' };
   }
 }
+
 
 
 
