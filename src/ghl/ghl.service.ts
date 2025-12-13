@@ -111,6 +111,13 @@ export class GHLService {
     pipelineId: string,
     extra: OpportunityExtra = {}
   ): Promise<string | null> {
+    // Check if opportunity already exists for the contact
+    const existingOpportunity = await this.getOpportunityByContactId(contactId);
+    if (existingOpportunity) {
+      this.logger.warn(`⚠️ Opportunity already exists for contact: ${contactId}`);
+      return existingOpportunity.id; // Return existing opportunity id to avoid duplication
+    }
+
     const url = `/opportunities/`;
     const { name, status, ...rest } = extra;
 
@@ -130,6 +137,25 @@ export class GHLService {
       const res = await this.clientV2.post(url, payload);
       this.logResponse(url, Date.now() - start, res.data);
       return res.data?.id || null;
+    } catch (error) {
+      this.logError(url, Date.now() - start, error);
+      return null;
+    }
+  }
+
+  // =====================================================
+  // OPPORTUNITIES (V2) — GET OPPORTUNITY BY CONTACT ID
+  // =====================================================
+  async getOpportunityByContactId(contactId: string): Promise<any | null> {
+    const url = `/opportunities/?contactId=${contactId}`;
+    this.logRequest('get', url);
+
+    const start = Date.now();
+
+    try {
+      const res = await this.clientV2.get(url);
+      this.logResponse(url, Date.now() - start, res.data);
+      return res.data?.[0] || null; // Assuming GHL API returns an array of opportunities
     } catch (error) {
       this.logError(url, Date.now() - start, error);
       return null;
