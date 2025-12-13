@@ -3,7 +3,7 @@ import axios, { AxiosInstance } from 'axios';
 
 interface OpportunityExtra {
   name?: string;
-  status?: string;
+  status?: 'open' | 'won' | 'lost' | 'abandoned';
   [key: string]: any;
 }
 
@@ -11,15 +11,14 @@ interface OpportunityExtra {
 export class GHLService {
   private readonly logger = new Logger(GHLService.name);
 
-  private clientV1: AxiosInstance; // Contacts + Tags API
-  private clientV2: AxiosInstance; // Opportunities API (LeadConnector)
+  private clientV1: AxiosInstance; // Contacts + Tags
+  private clientV2: AxiosInstance; // Opportunities (LeadConnector)
 
   constructor() {
     const GHL_PIT = 'pit-e5b6c5d7-2704-47f1-acfd-b21f4584367d';
 
     // ------------------------------------------------
-    // V1 CLIENT (contacts + tags)
-    // Uses existing API Key
+    // V1 CLIENT — Contacts & Tags (API KEY)
     // ------------------------------------------------
     this.clientV1 = axios.create({
       baseURL: 'https://rest.gohighlevel.com/v1',
@@ -31,14 +30,13 @@ export class GHLService {
     });
 
     // ------------------------------------------------
-    // V2 CLIENT (opportunities)
-    // Uses PIT (REQUIRED)
+    // V2 CLIENT — Opportunities (PIT REQUIRED)
     // ------------------------------------------------
     this.clientV2 = axios.create({
       baseURL: 'https://services.leadconnectorhq.com',
       headers: {
         Authorization: `Bearer ${GHL_PIT}`,
-        Version: '2021-07-28', // REQUIRED
+        Version: '2021-07-28',
         'Content-Type': 'application/json',
       },
     });
@@ -52,16 +50,16 @@ export class GHLService {
   private logRequest(method: string, url: string, payload?: any) {
     this.logger.debug(
       `📤 [GHL REQUEST]
-➡️  ${method.toUpperCase()} ${url}
-📝 Payload: ${payload ? JSON.stringify(payload) : '—'}`
+➡️ ${method.toUpperCase()} ${url}
+📝 ${payload ? JSON.stringify(payload) : '—'}`
     );
   }
 
   private logResponse(url: string, ms: number, data: any) {
     this.logger.debug(
       `📥 [GHL RESPONSE]
-⬅️  ${url}
-⏱️  ${ms}ms
+⬅️ ${url}
+⏱️ ${ms}ms
 📦 ${JSON.stringify(data)}`
     );
   }
@@ -70,16 +68,15 @@ export class GHLService {
     this.logger.error(
       `❌ [GHL ERROR]
 ❗ URL: ${url}
-⏱️  ${ms}ms
-💥 ${JSON.stringify(error?.response?.data || error.message)}
-🧾 ${error.stack || 'N/A'}`
+⏱️ ${ms}ms
+💥 ${JSON.stringify(error?.response?.data || error.message)}`
     );
   }
 
   // =====================================================
   // CONTACTS (V1)
   // =====================================================
-  async createOrUpdateContact(user: any) {
+  async createOrUpdateContact(user: any): Promise<string | null> {
     const url = `/contacts/`;
 
     const payload = {
@@ -107,14 +104,13 @@ export class GHLService {
   }
 
   // =====================================================
-  // OPPORTUNITIES (V2) — PIT AUTH
+  // OPPORTUNITIES (V2) — CREATE (NO stageId)
   // =====================================================
   async createOpportunity(
     contactId: string,
     pipelineId: string,
-    stageId: string,
     extra: OpportunityExtra = {}
-  ) {
+  ): Promise<string | null> {
     const url = `/opportunities/`;
     const { name, status, ...rest } = extra;
 
@@ -122,8 +118,7 @@ export class GHLService {
       locationId: process.env.GHL_LOCATION_ID,
       contactId,
       pipelineId,
-      stageId,
-      status: status ?? 'active',
+      status: status ?? 'open', // ✅ VALID VALUES ONLY
       name: name ?? `Lead ${contactId}`,
       ...rest,
     };
@@ -141,7 +136,13 @@ export class GHLService {
     }
   }
 
-  async updateOpportunity(opportunityId: string, updates: any) {
+  // =====================================================
+  // OPPORTUNITIES (V2) — UPDATE / MOVE STAGE
+  // =====================================================
+  async updateOpportunity(
+    opportunityId: string,
+    updates: any
+  ): Promise<any | null> {
     const url = `/opportunities/${opportunityId}`;
 
     this.logRequest('put', url, updates);
@@ -157,14 +158,14 @@ export class GHLService {
     }
   }
 
-  async moveStage(opportunityId: string, newStageId: string) {
-    return this.updateOpportunity(opportunityId, { stageId: newStageId });
+  async moveStage(opportunityId: string, stageId: string) {
+    return this.updateOpportunity(opportunityId, { stageId });
   }
 
   // =====================================================
   // TAGS (V1)
   // =====================================================
-  async addTag(contactId: string, tag: string) {
+  async addTag(contactId: string, tag: string): Promise<boolean> {
     const url = `/contacts/${contactId}/tags/`;
     const payload = { tags: [tag] };
 
@@ -180,7 +181,7 @@ export class GHLService {
     }
   }
 
-  async removeTag(contactId: string, tag: string) {
+  async removeTag(contactId: string, tag: string): Promise<boolean> {
     const url = `/contacts/${contactId}/tags/${tag}`;
 
     this.logRequest('delete', url);

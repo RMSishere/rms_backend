@@ -122,47 +122,47 @@ private async syncGHLContact(user: any) {
   }
 }
 
-private async createGHLOpportunity(user: any, pipelineId: string, stageId: string, type: 'customer' | 'affiliate') {
-  try {
-    const contactId =
-      user.ghlContactId || (await this.syncGHLContact(user));
+// private async createGHLOpportunity(user: any, pipelineId: string, stageId: string, type: 'customer' | 'affiliate') {
+//   try {
+//     const contactId =
+//       user.ghlContactId || (await this.syncGHLContact(user));
 
-    if (!contactId) return null;
+//     if (!contactId) return null;
 
-    const oppId = await this.ghlService.createOpportunity(contactId, pipelineId, stageId);
+//     const oppId = await this.ghlService.createOpportunity(contactId, pipelineId, stageId);
 
-    if (oppId) {
-      const updateField =
-        type === 'customer'
-          ? { ghlCustomerOpportunityId: oppId }
-          : { ghlAffiliateOpportunityId: oppId };
+//     if (oppId) {
+//       const updateField =
+//         type === 'customer'
+//           ? { ghlCustomerOpportunityId: oppId }
+//           : { ghlAffiliateOpportunityId: oppId };
 
-      await this.usersModel.updateOne(
-        { _id: user._id },
-        { $set: updateField }
-      );
-    }
+//       await this.usersModel.updateOne(
+//         { _id: user._id },
+//         { $set: updateField }
+//       );
+//     }
 
-    return oppId;
-  } catch (err) {
-    console.error('❌ createGHLOpportunity error:', err.message);
-  }
-}
+//     return oppId;
+//   } catch (err) {
+//     console.error('❌ createGHLOpportunity error:', err.message);
+//   }
+// }
 
-private async moveGHL(user: any, stageId: string, type: 'customer' | 'affiliate') {
-  try {
-    const oppId =
-      type === 'customer'
-        ? user.ghlCustomerOpportunityId
-        : user.ghlAffiliateOpportunityId;
+// private async moveGHL(user: any, stageId: string, type: 'customer' | 'affiliate') {
+//   try {
+//     const oppId =
+//       type === 'customer'
+//         ? user.ghlCustomerOpportunityId
+//         : user.ghlAffiliateOpportunityId;
 
-    if (!oppId) return;
+//     if (!oppId) return;
 
-    await this.ghlService.moveStage(oppId, stageId);
-  } catch (err) {
-    console.error('❌ moveGHL error:', err.message);
-  }
-}
+//     await this.ghlService.moveStage(oppId, stageId);
+//   } catch (err) {
+//     console.error('❌ moveGHL error:', err.message);
+//   }
+// }
 
 async addUser(data: User): Promise<User | APIMessage> {
   try {
@@ -219,7 +219,7 @@ async addUser(data: User): Promise<User | APIMessage> {
     if (Array.isArray(subscriptions) && subscriptions.length > 0) {
       const seen = new Set<string>();
       data.notificationSubscriptions = subscriptions
-        .map((sub, index) => {
+        .map((sub) => {
           if (!sub?.id) sub.id = randomUUID();
           if (seen.has(sub.id)) return null;
           seen.add(sub.id);
@@ -242,7 +242,7 @@ async addUser(data: User): Promise<User | APIMessage> {
     res['token'] = await generateToken(savedUser);
 
     // =====================================================
-    // 🟦 GHL SYNC — MINIMAL FIXES (CONTACT + OPPORTUNITY)
+    // 🟦 GHL SYNC — CONTACT + OPPORTUNITY
     // =====================================================
     try {
       // 1) Create / Update Contact
@@ -256,16 +256,18 @@ async addUser(data: User): Promise<User | APIMessage> {
         savedUser.ghlContactId = ghlContactId;
       }
 
-      // 2) Create Customer Opportunity (New Lead Stage)
+      // 2) Create Customer Opportunity (NEW LEAD) - TypeScript-safe
       if (ghlContactId) {
         const oppId = await this.ghlService.createOpportunity(
           ghlContactId,
           GHL_PIPELINES.CUSTOMERS,
-          GHL_STAGES.CUSTOMERS.NEW_LEAD,
-          { name: `${savedUser.firstName} ${savedUser.lastName}` }
+          { name: `${savedUser.firstName} ${savedUser.lastName}` } // extra object
         );
 
         if (oppId) {
+          // Move to desired stage
+          await this.ghlService.moveStage(oppId, GHL_STAGES.CUSTOMERS.NEW_LEAD);
+
           await this.usersModel.updateOne(
             { _id: savedUser._id },
             { $set: { ghlCustomerOpportunityId: oppId } }
@@ -309,7 +311,7 @@ async addUser(data: User): Promise<User | APIMessage> {
           first_name: data.firstName,
           last_name: data.lastName,
           role: 'member',
-          phone_number: data?.phoneNumber ? data.phoneNumber : '',
+          phone_number: data?.phoneNumber || '',
           zip_code: data.zipCode,
           dob:
             data.dob instanceof Date
@@ -325,8 +327,7 @@ async addUser(data: User): Promise<User | APIMessage> {
 
         console.log('✅ External user created (non-blocking)');
       } catch (externalErr) {
-        const msg =
-          externalErr.response?.data?.message || externalErr.message;
+        const msg = externalErr.response?.data?.message || externalErr.message;
         console.error('⚠️ External user creation failed:', msg);
       }
     });
@@ -340,6 +341,7 @@ async addUser(data: User): Promise<User | APIMessage> {
     throw err;
   }
 }
+
 
 
 
