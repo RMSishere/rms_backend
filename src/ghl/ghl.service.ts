@@ -15,8 +15,11 @@ export class GHLService {
   private clientV2: AxiosInstance; // Opportunities API (LeadConnector)
 
   constructor() {
+    const GHL_PIT = 'pit-e5b6c5d7-2704-47f1-acfd-b21f4584367d';
+
     // ------------------------------------------------
     // V1 CLIENT (contacts + tags)
+    // Uses existing API Key
     // ------------------------------------------------
     this.clientV1 = axios.create({
       baseURL: 'https://rest.gohighlevel.com/v1',
@@ -29,18 +32,18 @@ export class GHLService {
 
     // ------------------------------------------------
     // V2 CLIENT (opportunities)
-    // *** FIXED: Version header added ***
+    // Uses PIT (REQUIRED)
     // ------------------------------------------------
     this.clientV2 = axios.create({
       baseURL: 'https://services.leadconnectorhq.com',
       headers: {
-        Authorization: `Bearer ${process.env.GHL_API_KEY}`,
-        Version: '2021-07-28',  // 🔥 REQUIRED! fixes 401 error
+        Authorization: `Bearer ${GHL_PIT}`,
+        Version: '2021-07-28', // REQUIRED
         'Content-Type': 'application/json',
       },
     });
 
-    this.logger.log('🔗 GHL Clients initialized → V1 & V2 ready');
+    this.logger.log('🔗 GHL Clients initialized → V1(API Key) | V2(PIT)');
   }
 
   // ------------------------------------------------
@@ -91,13 +94,11 @@ export class GHLService {
     };
 
     this.logRequest('post', url, payload);
-
     const start = Date.now();
 
     try {
       const res = await this.clientV1.post(url, payload);
       this.logResponse(url, Date.now() - start, res.data);
-
       return res.data?.contact?.id || res.data?.id || null;
     } catch (error) {
       this.logError(url, Date.now() - start, error);
@@ -106,7 +107,7 @@ export class GHLService {
   }
 
   // =====================================================
-  // OPPORTUNITIES (V2)
+  // OPPORTUNITIES (V2) — PIT AUTH
   // =====================================================
   async createOpportunity(
     contactId: string,
@@ -115,7 +116,6 @@ export class GHLService {
     extra: OpportunityExtra = {}
   ) {
     const url = `/opportunities/`;
-
     const { name, status, ...rest } = extra;
 
     const payload = {
@@ -129,13 +129,11 @@ export class GHLService {
     };
 
     this.logRequest('post', url, payload);
-
     const start = Date.now();
 
     try {
       const res = await this.clientV2.post(url, payload);
       this.logResponse(url, Date.now() - start, res.data);
-
       return res.data?.id || null;
     } catch (error) {
       this.logError(url, Date.now() - start, error);
@@ -147,13 +145,11 @@ export class GHLService {
     const url = `/opportunities/${opportunityId}`;
 
     this.logRequest('put', url, updates);
-
     const start = Date.now();
 
     try {
       const res = await this.clientV2.put(url, updates);
       this.logResponse(url, Date.now() - start, res.data);
-
       return res.data;
     } catch (error) {
       this.logError(url, Date.now() - start, error);
@@ -173,13 +169,10 @@ export class GHLService {
     const payload = { tags: [tag] };
 
     this.logRequest('post', url, payload);
-
     const start = Date.now();
 
     try {
-      const res = await this.clientV1.post(url, payload);
-      this.logResponse(url, Date.now() - start, res.data);
-
+      await this.clientV1.post(url, payload);
       return true;
     } catch (error) {
       this.logError(url, Date.now() - start, error);
@@ -191,13 +184,10 @@ export class GHLService {
     const url = `/contacts/${contactId}/tags/${tag}`;
 
     this.logRequest('delete', url);
-
     const start = Date.now();
 
     try {
-      const res = await this.clientV1.delete(url);
-      this.logResponse(url, Date.now() - start, res.data);
-
+      await this.clientV1.delete(url);
       return true;
     } catch (error) {
       this.logError(url, Date.now() - start, error);
