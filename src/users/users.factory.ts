@@ -212,7 +212,7 @@ async addUser(data: User): Promise<User | APIMessage> {
     // Notification Subscriptions
     const subscriptions =
       await this.notificationSubscriptionFactory.getAllNotificationSubscriptions(
-        {} ,
+        {},
         data,
       );
 
@@ -239,54 +239,58 @@ async addUser(data: User): Promise<User | APIMessage> {
     res['token'] = await generateToken(savedUser);
 
     // =====================================================
-    // 🟦 GHL SYNC — CONTACT + OPPORTUNITY + TAGS
+    // 🟦 GHL SYNC — CONTACT + OPPORTUNITY + TAGS (SKIP FOR ROLE 2)
     // =====================================================
-    try {
-      // 1️⃣ Create / Update Contact
-      const ghlContactId = await this.ghlService.createOrUpdateContact(savedUser);
+    if (data.role !== USER_ROLES.AFFILIATE) {
+      try {
+        // 1️⃣ Create / Update Contact
+        const ghlContactId = await this.ghlService.createOrUpdateContact(savedUser);
 
-      if (ghlContactId) {
-        await this.usersModel.updateOne(
-          { _id: savedUser._id },
-          { $set: { ghlContactId } }
-        );
-        savedUser.ghlContactId = ghlContactId;
-
-        // 2️⃣ Add tags to contact
-        const tagsToAdd = ['customer - new']; // You can conditionally add more tags based on role or status
-        for (const tag of tagsToAdd) {
-          const tagAdded = await this.ghlService.addTag(ghlContactId, tag);
-          if (tagAdded) console.log(`✅ Tag "${tag}" added to GHL contact`);
-        }
-      }
-
-      // 3️⃣ Check if the contact already has an existing opportunity
-      let oppId = savedUser.ghlCustomerOpportunityId;
-      if (!oppId) {
-        // 4️⃣ If no opportunity exists, create one
-        oppId = await this.ghlService.createOpportunity(
-          ghlContactId,
-          GHL_PIPELINES.CUSTOMERS,
-          { name: `${savedUser.firstName} ${savedUser.lastName}` }
-        );
-
-        if (oppId) {
-          // Move to desired stage
-          await this.ghlService.moveStage(oppId, GHL_STAGES.CUSTOMERS.NEW_LEAD);
-
+        if (ghlContactId) {
           await this.usersModel.updateOne(
             { _id: savedUser._id },
-            { $set: { ghlCustomerOpportunityId: oppId } }
+            { $set: { ghlContactId } }
           );
-          savedUser.ghlCustomerOpportunityId = oppId;
-        }
-      } else {
-        console.log('⚠️ Existing opportunity found, skipping creation.');
-      }
+          savedUser.ghlContactId = ghlContactId;
 
-      console.log('✅ GHL Sync Completed for addUser()');
-    } catch (ghlErr) {
-      console.error('⚠️ GHL Sync Failed (addUser):', ghlErr?.message || ghlErr);
+          // 2️⃣ Add tags to contact
+          const tagsToAdd = ['customer - new']; // You can conditionally add more tags based on role or status
+          for (const tag of tagsToAdd) {
+            const tagAdded = await this.ghlService.addTag(ghlContactId, tag);
+            if (tagAdded) console.log(`✅ Tag "${tag}" added to GHL contact`);
+          }
+        }
+
+        // 3️⃣ Check if the contact already has an existing opportunity
+        let oppId = savedUser.ghlCustomerOpportunityId;
+        if (!oppId) {
+          // 4️⃣ If no opportunity exists, create one
+          oppId = await this.ghlService.createOpportunity(
+            ghlContactId,
+            GHL_PIPELINES.CUSTOMERS,
+            { name: `${savedUser.firstName} ${savedUser.lastName}` }
+          );
+
+          if (oppId) {
+            // Move to desired stage
+            await this.ghlService.moveStage(oppId, GHL_STAGES.CUSTOMERS.NEW_LEAD);
+
+            await this.usersModel.updateOne(
+              { _id: savedUser._id },
+              { $set: { ghlCustomerOpportunityId: oppId } }
+            );
+            savedUser.ghlCustomerOpportunityId = oppId;
+          }
+        } else {
+          console.log('⚠️ Existing opportunity found, skipping creation.');
+        }
+
+        console.log('✅ GHL Sync Completed for addUser()');
+      } catch (ghlErr) {
+        console.error('⚠️ GHL Sync Failed (addUser):', ghlErr?.message || ghlErr);
+      }
+    } else {
+      console.log('❌ GHL Sync Skipped for Affiliate Role');
     }
 
     // =====================================================
@@ -349,6 +353,7 @@ async addUser(data: User): Promise<User | APIMessage> {
     throw err;
   }
 }
+
 
 
 
