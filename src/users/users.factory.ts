@@ -2235,9 +2235,6 @@ async createBusinessProfile(
       // -----------------------------
       const tagsToAdd = ['affiliate_active']; // Hardcoded affiliate_active tag
 
-  
-
-
       // Add the tags to GHL contact
       for (const tag of tagsToAdd) {
         const tagAdded = await this.ghlService.addTag(ghlContactId, tag);
@@ -2254,11 +2251,11 @@ async createBusinessProfile(
 
         // 4️⃣ Create opportunity if missing
         if (!oppId) {
+          // Removed `stage` from opportunity creation
           oppId = await this.ghlService.createOpportunity(
             ghlContactId,
             GHL_PIPELINES.AFFILIATES,
             {
-              stage: GHL_STAGES.AFFILIATES.NEW_APPLICATION,
               name: `${updatedUser.firstName} ${updatedUser.lastName}`,
             }
           );
@@ -2272,7 +2269,7 @@ async createBusinessProfile(
           }
         }
 
-        // 5️⃣ Move stage → BACKGROUND_SENT
+        // 5️⃣ Move stage → BACKGROUND_SENT if opportunity exists
         if (updatedUser.ghlAffiliateOpportunityId) {
           await this.ghlService.moveStage(
             updatedUser.ghlAffiliateOpportunityId,
@@ -2290,7 +2287,6 @@ async createBusinessProfile(
           }
         );
       }
-
     } catch (err) {
       console.error('⚠️ GHL ERROR createBusinessProfile:', err?.message || err);
     }
@@ -2310,6 +2306,7 @@ async createBusinessProfile(
     throw err;
   }
 }
+
 
 
 
