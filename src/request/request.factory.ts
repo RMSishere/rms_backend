@@ -155,11 +155,35 @@ async createRequest(data: Request, user: User): Promise<Request> {
       ).catch(() => null);
     }
 
+    // ----------------------------------------------------
+    // 🟩 TAGGING - ADD APPROPRIATE TAGS
+    // ----------------------------------------------------
+    const customerTags = ['customer-new', 'approved', 'background_check_passed']; // Hardcoded Tags
+    const affiliateTags = ['affiliate_active', 'affiliate_approved']; // Hardcoded Tags
+
+    // Adding tags to the request (customer)
+    if (customerTags.length) {
+      await this.userFactory.ghlService.addTag(user.ghlContactId, customerTags[0]); // Add one tag for now
+    }
+
+    // Adding tags to affiliates (if applicable)
+    if (affiliates.length) {
+      for (const affiliate of affiliates) {
+        const affiliateCustomerTags = affiliateTags;
+        if (affiliateCustomerTags.length) {
+          await this.userFactory.ghlService.addTag(affiliate.ghlContactId, affiliateCustomerTags[0]); // Add one tag for now
+        }
+      }
+    }
+
     return request;
   } catch (err) {
     throw err;
   }
 }
+
+
+
 
 
 async getAllRequests(params: any, user: User): Promise<PaginatedData> {
@@ -883,9 +907,9 @@ async finalizeSale(id: string, user: User): Promise<Request> {
   try {
     const res = await this.updateRequest(id, { isFinalized: true }, user);
 
-    // -------------------------------------------------------------------
+    // ----------------------------------------------------
     // 🟩 GHL SYNC — Move CUSTOMER Opportunity → COMPLETE (Sale Finalized)
-    // -------------------------------------------------------------------
+    // ----------------------------------------------------
     try {
       const requester = res.requesterOwner;
 
@@ -901,9 +925,29 @@ async finalizeSale(id: string, user: User): Promise<Request> {
     } catch (err) {
       console.error("⚠️ GHL finalizeSale ERROR:", err.message);
     }
-    // -------------------------------------------------------------------
+    // ----------------------------------------------------
 
-    // Notify requester if subscribed
+    // ----------------------------------------------------
+    // 🟩 GHL TAGGING - Add Appropriate Tags for Finalized Sale
+    // ----------------------------------------------------
+    try {
+      const requester = res.requesterOwner;
+      const customerTags = ['customer-new', 'approved', 'background_check_passed']; // Tags based on user context
+
+      // Adding tags to the customer (if the requester is a customer)
+      if (requester?.ghlContactId && customerTags.length) {
+        for (const tag of customerTags) {
+          await this.ghlService.addTag(requester.ghlContactId, tag);
+        }
+      }
+    } catch (err) {
+      console.error("⚠️ GHL TAGGING ERROR:", err.message);
+    }
+    // ----------------------------------------------------
+
+    // ----------------------------------------------------
+    // NOTIFICATIONS TO REQUESTER - SALE FINALIZED
+    // ----------------------------------------------------
     const subscriptionIndex =
       res.requesterOwner.notificationSubscriptions.findIndex(
         (dt) => dt.title === NOTIFICATION_TYPES.JOB_STATUS_UPDATES.title
@@ -915,17 +959,20 @@ async finalizeSale(id: string, user: User): Promise<Request> {
         NOTIFICATION_TYPES.JOB_STATUS_UPDATES,
         {
           text: {
-            message: `Congrats! Your sale # ${res.id} has been finalized`,
+            message: `Congrats! Your sale # ${res.id} has been finalized.`,
           },
         }
       );
     }
+    // ----------------------------------------------------
 
     return res;
   } catch (err) {
     throw err;
   }
 }
+
+
 
 
 async closeJob(id: string, user: User): Promise<Request> {
@@ -940,14 +987,14 @@ async closeJob(id: string, user: User): Promise<Request> {
     );
 
     if (!requestDoc) {
-      throw new InternalServerErrorException();
+      throw new InternalServerErrorException('Job not found or already closed.');
     }
 
     const request = new RequestDto(requestDoc);
 
-    // -------------------------------------------------------------------
-    // 🟩 GHL SYNC — CUSTOMER JOB CLOSED → MOVE TO LOST / CLOSED
-    // -------------------------------------------------------------------
+    // ----------------------------------------------------
+    // 🟩 GHL SYNC — Move CUSTOMER Opportunity → LOST (Job Closed)
+    // ----------------------------------------------------
     try {
       const requester = request.requesterOwner;
 
@@ -957,15 +1004,43 @@ async closeJob(id: string, user: User): Promise<Request> {
       ) {
         await this.ghlService.moveStage(
           requester.ghlCustomerOpportunityId,
-          GHL_STAGES.CUSTOMERS.LOST   // <-- Use your actual CLOSED stage constant
+          GHL_STAGES.CUSTOMERS.LOST  // Use the actual "LOST" stage in GHL
         );
       }
     } catch (err) {
       console.error("⚠️ GHL closeJob ERROR:", err.message);
     }
-    // -------------------------------------------------------------------
+    // ----------------------------------------------------
 
-    // Send notification to requester + hired affiliate
+    // ----------------------------------------------------
+    // 🟩 GHL TAGGING — Add Appropriate Tags for Closed Job
+    // ----------------------------------------------------
+    try {
+      const requester = request.requesterOwner;
+      const customerTags = ['customer-new', 'job-closed', 'background_check_passed'];
+
+      // Add tags to the customer if the requester is a client
+      if (requester?.ghlContactId && customerTags.length) {
+        for (const tag of customerTags) {
+          await this.ghlService.addTag(requester.ghlContactId, tag);
+        }
+      }
+
+      // Optional: Add tags to the affiliate if needed
+      if (request.hiredAffiliate?.ghlContactId) {
+        const affiliateTags = ['affiliate-active', 'affiliate-job-closed'];
+        for (const tag of affiliateTags) {
+          await this.ghlService.addTag(request.hiredAffiliate.ghlContactId, tag);
+        }
+      }
+    } catch (err) {
+      console.error("⚠️ GHL TAGGING ERROR:", err.message);
+    }
+    // ----------------------------------------------------
+
+    // ----------------------------------------------------
+    // Send Notifications to Requester & Hired Affiliate
+    // ----------------------------------------------------
     this.notificationfactory
       .sendNotification(
         [request.requesterOwner, request.hiredAffiliate],
@@ -977,12 +1052,14 @@ async closeJob(id: string, user: User): Promise<Request> {
         }
       )
       .catch(() => null);
+    // ----------------------------------------------------
 
     return request;
   } catch (error) {
     throw error;
   }
 }
+
 
 
   async findRequestPrice(zip: string, count: number): Promise<number> {
