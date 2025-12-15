@@ -1,4 +1,4 @@
-import admin from '../../firebase-admin';
+import admin from '../firebase/firebase-admin';
 
 const OS = {
   ANDROID: 'android',
