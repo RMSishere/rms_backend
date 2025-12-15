@@ -97,26 +97,24 @@ export class NotificationFactory extends BaseFactory {
       return [recipients as User];
     }
 
-    // IDs (string | string[])
-    const ids = Array.isArray(recipients) ? recipients : [recipients];
+    // ✅ IDs path — normalize to unknown[] so .filter has ONE signature
+    const ids = (Array.isArray(recipients) ? recipients : [recipients]) as unknown[];
 
-    const stringIds = ids.filter(
-      (x): x is string => typeof x === 'string' && x.length > 0,
-    );
+    const stringIds = ids.filter((x): x is string => typeof x === 'string' && x.length > 0);
     if (!stringIds.length) return [];
 
     const objectIds = stringIds
-      .filter(id => Types.ObjectId.isValid(id))
-      .map(id => new Types.ObjectId(id));
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
 
     if (!objectIds.length) return [];
 
-    // ✅ Fix TS2769: force FilterQuery typing so mongoose picks correct overload
     const filter: FilterQuery<any> = { _id: { $in: objectIds } };
     const users = await this.userModel.find(filter).lean();
 
     return users as any;
   }
+
 
   /* ------------------------------------------------------------------ */
   /* MAIN                                                               */
