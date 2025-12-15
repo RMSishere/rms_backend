@@ -1,67 +1,60 @@
-import gcm = require("node-gcm");
-
-const sender = new gcm.Sender(process.env.FCM_API_KEY);
+import admin from '../../firebase-admin';
 
 const OS = {
   ANDROID: 'android',
-  IOS: 'ios'
-}
+  IOS: 'ios',
+};
 
 export interface Message {
-  title: string
+  title: string;
+  body?: string;
 }
 
 export interface Device {
-  token: string,
-  os: string,
+  token: string;
+  os: string;
 }
 
+/**
+ * CLASS-BASED (multiple devices)
+ */
 export default class PushNotification {
-  message: Message
+  message: Message;
 
   constructor(message: Message) {
     this.message = message;
   }
 
-  send(devices: Array<Device>) {
-    const androidDevices = devices
-      .filter(device => device.os === OS.ANDROID);
+  async send(devices: Device[]) {
+    const tokens = devices.map((d) => d.token);
+    if (!tokens.length) return;
 
-    androidDevices.length && this.sendAndroid(androidDevices);
-
-    const iosDevices = devices
-      .filter(device => device.os === OS.IOS);
-
-    iosDevices.length && this.sendIOS(iosDevices);
+    await this.sendMultiple(tokens);
   }
 
-  sendAndroid(devices: Array<Device>) {
-    const deviceTokens = devices.map(device => device.token);
+  private async sendMultiple(tokens: string[]) {
+    try {
+      const response = await admin.messaging().sendEachForMulticast({
+        tokens,
+        notification: {
+          title: this.message.title,
+          body:
+            this.message.body ||
+            'This is a notification that will be displayed if your app is in the background.',
+        },
+        android: { priority: 'high' },
+      });
 
-    const message = new gcm.Message({
-      // data: { key1: 'msg1' },
-      notification: {
-        title: this.message.title,
-        icon: "ic_launcher",
-        body: "This is a notification that will be displayed if your app is in the background.",
-      },
-    });
-
-    sender.send(message, { registrationTokens: deviceTokens }, function (err, response) {
-      if (err) console.error(err, "notification err");
-      else console.log(response, "notification res");
-    });
+      console.log('✅ Multicast push result:', response);
+    } catch (error) {
+      console.error('❌ Multicast push error:', error);
+    }
   }
-
-  sendIOS(devices: Array<Device>) {
-    const deviceTokens = devices.map(device => device.token);
-  }
-
 }
 
 /**
- * Send push notification using a single FCM token
- * (Can be called directly from controller)
+ * FUNCTION-BASED (single token)
+ * 👉 This is what your controller should call
  */
 export async function sendPushByToken(
   token: string,
@@ -71,29 +64,24 @@ export async function sendPushByToken(
     return { success: false, error: 'FCM token is required' };
   }
 
-  const gcmMessage = new gcm.Message({
-    notification: {
-      title: message.title,
-      icon: 'ic_launcher',
-      body:
-        message?.['body'] ||
-        'This is a notification that will be displayed if your app is in the background.',
-    },
-  });
-
-  return new Promise((resolve) => {
-    sender.send(
-      gcmMessage,
-      { registrationTokens: [token] },
-      (err, response) => {
-        if (err) {
-          console.error('❌ Push error:', err);
-          resolve({ success: false, error: err });
-        } else {
-          console.log('✅ Push sent:', response);
-          resolve({ success: true, response });
-        }
+  try {
+    const response = await admin.messaging().send({
+      token,
+      notification: {
+        title: message.title,
+        body:
+          message.body ||
+          'This is a notification that will be displayed if your app is in the background.',
       },
-    );
-  });
+      android: {
+        priority: 'high',
+      },
+    });
+
+    console.log('✅ Push sent:', response);
+    return { success: true, response };
+  } catch (error) {
+    console.error('❌ Push error:', error);
+    return { success: false, error };
+  }
 }
