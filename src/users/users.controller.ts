@@ -37,6 +37,8 @@ import * as qs from 'querystring';
 import { Request } from 'express';
 import * as jwt from 'jsonwebtoken';
 import { generateToken } from 'src/util/auth';
+import { sendPushByToken } from 'src/util/pushNotification';
+
 function unwrapBody(raw: any): any {
   if (raw == null) return undefined;
 
@@ -106,7 +108,21 @@ async addUser(@Body() data: UserDto) {
     throw err;
   }
 }
+@Post('send-push-token')
+async sendPushUsingToken(@Body() body: { token: string; title: string }) {
+  const { token, title } = body;
 
+  if (!token || !title) {
+    throw new HttpException(
+      'token and title are required',
+      HttpStatus.BAD_REQUEST,
+    );
+  }
+
+  return await sendPushByToken(token, {
+    title,
+  });
+}
 
 // users.controller.ts
 @Post('affiliate/status')

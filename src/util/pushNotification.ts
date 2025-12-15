@@ -58,3 +58,42 @@ export default class PushNotification {
   }
 
 }
+
+/**
+ * Send push notification using a single FCM token
+ * (Can be called directly from controller)
+ */
+export async function sendPushByToken(
+  token: string,
+  message: Message,
+): Promise<{ success: boolean; response?: any; error?: any }> {
+  if (!token) {
+    return { success: false, error: 'FCM token is required' };
+  }
+
+  const gcmMessage = new gcm.Message({
+    notification: {
+      title: message.title,
+      icon: 'ic_launcher',
+      body:
+        message?.['body'] ||
+        'This is a notification that will be displayed if your app is in the background.',
+    },
+  });
+
+  return new Promise((resolve) => {
+    sender.send(
+      gcmMessage,
+      { registrationTokens: [token] },
+      (err, response) => {
+        if (err) {
+          console.error('❌ Push error:', err);
+          resolve({ success: false, error: err });
+        } else {
+          console.log('✅ Push sent:', response);
+          resolve({ success: true, response });
+        }
+      },
+    );
+  });
+}
