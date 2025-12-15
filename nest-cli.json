@@ -5,9 +5,8 @@
     "assets": [
       {
         "include": "firebase/*.json",
-        "outDir": "dist/src/firebase"
+        "outDir": "dist/src"
       }
-    ],
-    "watchAssets": true
+    ]
   }
 }
