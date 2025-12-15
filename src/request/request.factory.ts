@@ -90,14 +90,15 @@ async createRequest(data: Request, user: User): Promise<Request> {
     // 🟩 GHL: Move Customer → ACTIVE_JOB
     // ----------------------------------------------------
     try {
-      if (user.role === USER_ROLES.CLIENT && userdata.ghlCustomerOpportunityId) {
-        await this.userFactory.ghlService.moveStage(
+      if (user.role === USER_ROLES.CLIENT && userdata?.ghlCustomerOpportunityId) {
+        // ✅ Use local injected ghlService (safer than userFactory.ghlService)
+        await this.ghlService.moveStage(
           userdata.ghlCustomerOpportunityId,
-          GHL_STAGES.CUSTOMERS.ACTIVE_JOB
+          GHL_STAGES.CUSTOMERS.ACTIVE_JOB,
         );
       }
-    } catch (err) {
-      console.error("⚠️ GHL ACTIVE_JOB Error:", err.message);
+    } catch (err: any) {
+      console.error('⚠️ GHL ACTIVE_JOB Error:', err?.message || err);
     }
 
     // -------------------------------
@@ -114,11 +115,9 @@ async createRequest(data: Request, user: User): Promise<Request> {
       const description = "Congrats! You've got a new service request in your area.";
       const adminDescription = `Congrats! There is a new service request in zip code ${request.zip}.`;
 
-      // Send to affiliates
-      this.notificationfactory.sendNotification(
-        affiliates,
-        NOTIFICATION_TYPES.NEW_JOB,
-        {
+      // ✅ Affiliate notifications (inApp + text + email as you already had)
+      this.notificationfactory
+        .sendNotification(affiliates, NOTIFICATION_TYPES.NEW_JOB, {
           inApp: {
             message: { requestId: request.id, title, description },
           },
@@ -129,14 +128,12 @@ async createRequest(data: Request, user: User): Promise<Request> {
             template: MAIL_TEMPLATES.NEW_REQUEST,
             locals: { title, description },
           },
-        }
-      ).catch(() => null);
+        })
+        .catch(() => null);
 
-      // Send to admins
-      this.notificationfactory.sendNotification(
-        admin,
-        NOTIFICATION_TYPES.NEW_JOB,
-        {
+      // ✅ Admin notifications (keeps your existing payload)
+      this.notificationfactory
+        .sendNotification(admin, NOTIFICATION_TYPES.NEW_JOB, {
           inApp: {
             message: {
               requestId: request.id,
@@ -151,29 +148,37 @@ async createRequest(data: Request, user: User): Promise<Request> {
             template: MAIL_TEMPLATES.NEW_REQUEST,
             locals: { title, description: adminDescription },
           },
-        }
-      ).catch(() => null);
+        })
+        .catch(() => null);
     }
 
     // ----------------------------------------------------
     // 🟩 TAGGING - ADD APPROPRIATE TAGS
     // ----------------------------------------------------
-    const customerTags = ['customer-new', 'approved', 'background_check_passed']; // Hardcoded Tags
-    const affiliateTags = ['affiliate_active', 'affiliate_approved']; // Hardcoded Tags
+    const customerTags = ['customer-new', 'approved', 'background_check_passed'];
+    const affiliateTags = ['affiliate_active', 'affiliate_approved'];
 
     // Adding tags to the request (customer)
-    if (customerTags.length) {
-      await this.userFactory.ghlService.addTag(user.ghlContactId, customerTags[0]); // Add one tag for now
+    try {
+      if (customerTags.length && user?.ghlContactId) {
+        await this.ghlService.addTag(user.ghlContactId, customerTags[0]); // keep "one tag for now"
+      }
+    } catch (err: any) {
+      console.error('⚠️ GHL Customer Tag add error:', err?.message || err);
     }
 
     // Adding tags to affiliates (if applicable)
-    if (affiliates.length) {
-      for (const affiliate of affiliates) {
-        const affiliateCustomerTags = affiliateTags;
-        if (affiliateCustomerTags.length) {
-          await this.userFactory.ghlService.addTag(affiliate.ghlContactId, affiliateCustomerTags[0]); // Add one tag for now
+    try {
+      if (affiliates.length) {
+        for (const affiliate of affiliates) {
+          const affiliateCustomerTags = affiliateTags;
+          if (affiliateCustomerTags.length && affiliate?.ghlContactId) {
+            await this.ghlService.addTag(affiliate.ghlContactId, affiliateCustomerTags[0]); // keep "one tag for now"
+          }
         }
       }
+    } catch (err: any) {
+      console.error('⚠️ GHL Affiliate Tag add error:', err?.message || err);
     }
 
     return request;
@@ -181,6 +186,7 @@ async createRequest(data: Request, user: User): Promise<Request> {
     throw err;
   }
 }
+
 
 
 
@@ -471,95 +477,133 @@ async getAllRequests(params: any, user: User): Promise<PaginatedData> {
   }
 
   async scheduleAppointmentJobsForRequest(
-    appointment: Appointment,
-    request: Request,
-  ) {
-    if (appointment.notify) {
-      // create scheduled email jobs for customer
-      const today = moment();
-      const appointmentDate = moment(appointment.startTime);
+  appointment: Appointment,
+  request: Request,
+) {
+  if (!appointment?.notify) return;
 
-      if (appointmentDate.isSameOrAfter(today, 'day')) {
-        // if appointment date is not behind today
-        const emailData = {
-          appointment: appointment,
-          service: SERVICES[request.requestType],
-        };
+  const today = moment();
+  const appointmentDate = moment(appointment.startTime);
 
-        const to = appointment.appointee.email;
+  // Only schedule future/same-day appointments
+  if (!appointmentDate.isSameOrAfter(today, 'day')) return;
 
-        if (to) {
-          const twoWeeksBeforeDate = moment(appointmentDate).subtract(
-            2,
-            'weeks',
-          );
-          if (twoWeeksBeforeDate.isSameOrAfter(today, 'day')) {
-            // 2 weeks before
-            // 11 AM US Pacific Standard Time
-            this.scheduleFactory.addScheduleJob({
-              jobDate: twoWeeksBeforeDate
-                .tz('US/Pacific')
-                .hours(11)
-                .minute(0)
-                .toDate(),
-              jobType: SCHEDULE_JOB.SEND_MAIL,
-              jobFor: appointment._id,
-              jobForModel: 'appointment',
-              jobData: {
-                to: to,
-                template: MAIL_TEMPLATES.APPOINTMENT_REMINDERS.TWO_WEEKS_BEFORE,
-                emailData,
-                from: MAIL_FROM.AFFILIATE,
-              },
-            });
-          }
+  const serviceLabel = SERVICES[request.requestType]?.label || 'Service';
 
-          // 1 week before
-          // 11 AM US Pacific Standard Time
-          const oneWeekBeforeDate = moment(appointmentDate).subtract(1, 'week');
+  // ----------------------------------------------------
+  // ✅ EMAIL REMINDERS (existing)
+  // ----------------------------------------------------
+  const emailData = {
+    appointment,
+    service: SERVICES[request.requestType],
+  };
 
-          if (oneWeekBeforeDate.isSameOrAfter(today, 'day')) {
-            this.scheduleFactory.addScheduleJob({
-              jobDate: oneWeekBeforeDate
-                .tz('US/Pacific')
-                .hours(11)
-                .minute(0)
-                .toDate(),
-              jobType: SCHEDULE_JOB.SEND_MAIL,
-              jobFor: appointment._id,
-              jobForModel: 'appointment',
-              jobData: {
-                to: to,
-                template: MAIL_TEMPLATES.APPOINTMENT_REMINDERS.ONE_WEEK_BEFORE,
-                emailData,
-                from: MAIL_FROM.AFFILIATE,
-              },
-            });
-          }
+  const to = (appointment as any)?.appointee?.email || (appointment as any)?.appointee?.['email'];
 
-          // on the day of appointment
-          // 11 AM US Pacific Standard Time
-          this.scheduleFactory.addScheduleJob({
-            jobDate: appointmentDate
-              .tz('US/Pacific')
-              .hours(11)
-              .minute(0)
-              .toDate(),
-            jobType: SCHEDULE_JOB.SEND_MAIL,
-            jobFor: appointment._id,
-            jobForModel: 'appointment',
-            jobData: {
-              to: to,
-              template:
-                MAIL_TEMPLATES.APPOINTMENT_REMINDERS.ON_APPOINTMENT_DATE,
-              emailData,
-              from: MAIL_FROM.AFFILIATE,
-            },
-          });
-        }
-      }
+  if (to) {
+    const twoWeeksBeforeDate = moment(appointmentDate).subtract(2, 'weeks');
+    if (twoWeeksBeforeDate.isSameOrAfter(today, 'day')) {
+      await this.scheduleFactory.addScheduleJob({
+        jobDate: twoWeeksBeforeDate.tz('US/Pacific').hours(11).minute(0).toDate(),
+        jobType: SCHEDULE_JOB.SEND_MAIL,
+        jobFor: (appointment as any)._id,
+        jobForModel: 'appointment',
+        jobData: {
+          to,
+          template: MAIL_TEMPLATES.APPOINTMENT_REMINDERS.TWO_WEEKS_BEFORE,
+          emailData,
+          from: MAIL_FROM.AFFILIATE,
+        },
+      });
     }
+
+    const oneWeekBeforeDate = moment(appointmentDate).subtract(1, 'week');
+    if (oneWeekBeforeDate.isSameOrAfter(today, 'day')) {
+      await this.scheduleFactory.addScheduleJob({
+        jobDate: oneWeekBeforeDate.tz('US/Pacific').hours(11).minute(0).toDate(),
+        jobType: SCHEDULE_JOB.SEND_MAIL,
+        jobFor: (appointment as any)._id,
+        jobForModel: 'appointment',
+        jobData: {
+          to,
+          template: MAIL_TEMPLATES.APPOINTMENT_REMINDERS.ONE_WEEK_BEFORE,
+          emailData,
+          from: MAIL_FROM.AFFILIATE,
+        },
+      });
+    }
+
+    await this.scheduleFactory.addScheduleJob({
+      jobDate: appointmentDate.tz('US/Pacific').hours(11).minute(0).toDate(),
+      jobType: SCHEDULE_JOB.SEND_MAIL,
+      jobFor: (appointment as any)._id,
+      jobForModel: 'appointment',
+      jobData: {
+        to,
+        template: MAIL_TEMPLATES.APPOINTMENT_REMINDERS.ON_APPOINTMENT_DATE,
+        emailData,
+        from: MAIL_FROM.AFFILIATE,
+      },
+    });
   }
+
+  // ----------------------------------------------------
+  // ✅ PUSH REMINDERS (NEW) — 24h and 3h before (Customer)
+  // Uses ScheduleFactory jobType: SCHEDULE_JOB.SEND_PUSH
+  // ----------------------------------------------------
+  try {
+    const appointeeId =
+      (appointment as any)?.appointee?._id || (appointment as any)?.appointee;
+
+    if (!appointeeId) return;
+
+    // 🔔 24 hours before (quiet hours ON)
+    const push24hDate = moment(appointmentDate).subtract(24, 'hours');
+    if (push24hDate.isAfter(today)) {
+      await this.scheduleFactory.addScheduleJob({
+        jobDate: push24hDate.toDate(),
+        jobType: SCHEDULE_JOB.SEND_PUSH,
+        jobFor: (appointment as any)._id,
+        jobForModel: 'appointment',
+        jobData: {
+          userId: String(appointeeId),
+          title: 'Reminder for tomorrow',
+          body: `Your ${serviceLabel} is tomorrow at ${appointmentDate.format('h:mm A')}.`,
+          data: {
+            type: 'appointment_reminder_24h',
+            requestId: request.id,
+            appointmentId: (appointment as any).id,
+          },
+          quietHours: true,
+        },
+      });
+    }
+
+    // 🔔 3 hours before (quiet hours OFF because critical)
+    const push3hDate = moment(appointmentDate).subtract(3, 'hours');
+    if (push3hDate.isAfter(today)) {
+      await this.scheduleFactory.addScheduleJob({
+        jobDate: push3hDate.toDate(),
+        jobType: SCHEDULE_JOB.SEND_PUSH,
+        jobFor: (appointment as any)._id,
+        jobForModel: 'appointment',
+        jobData: {
+          userId: String(appointeeId),
+          title: `Today’s the day`,
+          body: `Your ${serviceLabel} is at ${appointmentDate.format('h:mm A')}.`,
+          data: {
+            type: 'appointment_reminder_3h',
+            requestId: request.id,
+            appointmentId: (appointment as any).id,
+          },
+          quietHours: false,
+        },
+      });
+    }
+  } catch (err: any) {
+    console.error('⚠️ schedule PUSH reminders failed:', err?.message || err);
+  }
+}
 
 async addJobUpdate(
   requestId: string,
@@ -576,53 +620,72 @@ async addJobUpdate(
         user,
       );
 
-      // Fetch requester for email/SMS notifications
       const requestDoc = await this.requestModel
         .findOne({ id: requestId })
         .populate('requesterOwner');
 
       if (requestDoc && requestDoc.requesterOwner) {
-        const requester = requestDoc.requesterOwner;
+        const requester = requestDoc.requesterOwner as any;
         const serviceLabel = SERVICES[requestDoc.requestType]?.label || 'Service';
-        const appointmentDate = moment(jobUpdate.appointment.startTime).format('MMMM Do YYYY, h:mm A');
+        const appointmentDate = moment(jobUpdate.appointment.startTime).format(
+          'MMMM Do YYYY, h:mm A',
+        );
 
         const title = `Appointment Scheduled`;
         const description = `Your ${serviceLabel} appointment has been scheduled for ${appointmentDate}.`;
 
-        // ✅ Email via NotificationFactory
-  await this.notificationfactory.sendNotification(
-  requester,
-  NOTIFICATION_TYPES.JOB_STATUS_UPDATES,
-  {
-    email: {
-      template: MAIL_TEMPLATES.NEW_MESSAGE,
-      locals: {
-        subject: title,
-        body: description,
-        message: {
-          sender: {
-            firstName: requester.firstName || 'Unknown',
-            lastName: requester.lastName || 'User',
+        // ✅ In-App Notification (ADDED)
+        try {
+          await this.notificationfactory.sendNotification(
+            requester,
+            NOTIFICATION_TYPES.JOB_STATUS_UPDATES,
+            {
+              inApp: {
+                message: {
+                  requestId,
+                  title,
+                  description,
+                  screen: 'JobUpdates',
+                  screenParams: { id: requestId },
+                },
+              },
+            },
+          );
+        } catch (inAppErr: any) {
+          console.error('⚠️ InApp notify failed (addJobUpdate):', inAppErr?.message || inAppErr);
+        }
+
+        // ✅ Email via NotificationFactory (KEPT)
+        await this.notificationfactory.sendNotification(
+          requester,
+          NOTIFICATION_TYPES.JOB_STATUS_UPDATES,
+          {
+            email: {
+              template: MAIL_TEMPLATES.NEW_MESSAGE,
+              locals: {
+                subject: title,
+                body: description,
+                message: {
+                  sender: {
+                    firstName: requester.firstName || 'Unknown',
+                    lastName: requester.lastName || 'User',
+                  },
+                  messageFor: {
+                    id: requestId,
+                  },
+                },
+                service: {
+                  label: serviceLabel,
+                },
+              },
+            },
           },
-          messageFor: {
-            id: requestId,
-          },
-        },
-        service: {
-          label: serviceLabel, // Ensure serviceLabel is defined from SERVICES
-        },
-      },
-    },
-  }
-);
+        );
 
-
-
-        // ✅ SMS via Twilio
+        // ✅ SMS via Twilio (KEPT, just safer E.164 formatting)
         if (requester.phoneNumber) {
-          const toPhoneNumber = requester.phoneNumber.startsWith('+')
-            ? requester.phoneNumber
-            : `+1${requester.phoneNumber}`;
+          const raw = String(requester.phoneNumber).trim();
+          const toPhoneNumber = raw.startsWith('+') ? raw : `+1${raw}`;
 
           await this.twilioClient.messages.create({
             from: process.env.TWILIO_PHONE_NUMBER,
@@ -653,6 +716,7 @@ async addJobUpdate(
     throw err;
   }
 }
+
 
 // inside your factory/service
 async addJobAgreement(
@@ -830,49 +894,52 @@ async addJobAgreement(
       throw err;
     }
   }
- async getRequestById2(id: string, viewer: User): Promise<Request> {
+async getRequestById2(id: string, viewer: User): Promise<Request> {
   try {
-    console.log("here");
-    const requestDoc = await this.requestModel.findOne({
-      id: id,
-      isActive: true,
-    })
-    .populate('requesterOwner') // ensure we can notify the job owner
-    .populate('hiredAffiliate')
-    .populate('leads.affiliate');
+    console.log('here');
+    const requestDoc = await this.requestModel
+      .findOne({ id: id, isActive: true })
+      .populate('requesterOwner')
+      .populate('hiredAffiliate')
+      .populate('leads.affiliate');
 
     if (!requestDoc) {
       throw new Error('Request not found');
     }
 
-    // Check if viewer is an affiliate and top-rated
     const isAffiliate = viewer?.role === USER_ROLES.AFFILIATE;
     const rating = viewer?.businessProfile?.rating;
     const isTopRated = isAffiliate && rating >= 4.8;
 
     if (isTopRated) {
-      const requester = requestDoc.requesterOwner;
+      const requester: any = requestDoc.requesterOwner;
 
+      // ✅ FIX: use the correct signature consistently:
+      // sendNotification(to, NOTIFICATION_TYPES.X, payload)
       await this.notificationfactory.sendNotification(
         requester,
-        {
-          title: 'Top-Rated Affiliate Viewed Your Job',
-          type: NOTIFICATION_TYPES.JOB_STATUS_UPDATES.type,
-        },
+        NOTIFICATION_TYPES.JOB_STATUS_UPDATES,
         {
           inApp: {
             message: {
-              text: `A top-rated affiliate (${viewer.firstName} ${viewer.lastName}) viewed your job.`,
+              requestId: id,
+              title: 'Top-Rated Affiliate Viewed Your Job',
+              description: `A top-rated affiliate (${viewer.firstName} ${viewer.lastName}) viewed your job.`,
+              screen: 'JobDetails',
+              screenParams: { id },
             },
           },
           email: {
-            template: MAIL_TEMPLATES.NEW_MESSAGE, // Use appropriate template if available
+            template: MAIL_TEMPLATES.NEW_MESSAGE,
             locals: {
               subject: 'A top-rated affiliate viewed your job',
               body: `A top-rated affiliate (${viewer.firstName} ${viewer.lastName}) just viewed your job.`,
             },
           },
-        }
+          text: {
+            message: `A top-rated affiliate (${viewer.firstName} ${viewer.lastName}) viewed your job.`,
+          },
+        },
       );
     }
 
@@ -881,6 +948,7 @@ async addJobAgreement(
     throw err;
   }
 }
+
 
 
   async updateRequest(id: string, data: Request, user: User): Promise<Request> {
@@ -908,52 +976,47 @@ async finalizeSale(id: string, user: User): Promise<Request> {
     const res = await this.updateRequest(id, { isFinalized: true }, user);
 
     // ----------------------------------------------------
-    // 🟩 GHL SYNC — Move CUSTOMER Opportunity → COMPLETE (Sale Finalized)
+    // 🟩 GHL SYNC — Move CUSTOMER Opportunity → REPEAT_CUSTOMER
     // ----------------------------------------------------
     try {
       const requester = res.requesterOwner;
 
-      if (
-        requester?.role === USER_ROLES.CLIENT &&
-        requester?.ghlCustomerOpportunityId
-      ) {
+      if (requester?.role === USER_ROLES.CLIENT && requester?.ghlCustomerOpportunityId) {
         await this.ghlService.moveStage(
           requester.ghlCustomerOpportunityId,
-          GHL_STAGES.CUSTOMERS.REPEAT_CUSTOMER
+          GHL_STAGES.CUSTOMERS.REPEAT_CUSTOMER,
         );
       }
-    } catch (err) {
-      console.error("⚠️ GHL finalizeSale ERROR:", err.message);
+    } catch (err: any) {
+      console.error('⚠️ GHL finalizeSale ERROR:', err?.message || err);
     }
-    // ----------------------------------------------------
 
     // ----------------------------------------------------
     // 🟩 GHL TAGGING - Add Appropriate Tags for Finalized Sale
     // ----------------------------------------------------
     try {
       const requester = res.requesterOwner;
-      const customerTags = ['customer-new', 'approved', 'background_check_passed']; // Tags based on user context
+      const customerTags = ['customer-new', 'approved', 'background_check_passed'];
 
-      // Adding tags to the customer (if the requester is a customer)
       if (requester?.ghlContactId && customerTags.length) {
         for (const tag of customerTags) {
           await this.ghlService.addTag(requester.ghlContactId, tag);
         }
       }
-    } catch (err) {
-      console.error("⚠️ GHL TAGGING ERROR:", err.message);
+    } catch (err: any) {
+      console.error('⚠️ GHL TAGGING ERROR:', err?.message || err);
     }
-    // ----------------------------------------------------
 
     // ----------------------------------------------------
     // NOTIFICATIONS TO REQUESTER - SALE FINALIZED
     // ----------------------------------------------------
     const subscriptionIndex =
       res.requesterOwner.notificationSubscriptions.findIndex(
-        (dt) => dt.title === NOTIFICATION_TYPES.JOB_STATUS_UPDATES.title
+        (dt) => dt.title === NOTIFICATION_TYPES.JOB_STATUS_UPDATES.title,
       );
 
     if (subscriptionIndex >= 0) {
+      // ✅ keep your existing text notification (as-is)
       this.notificationfactory.sendNotification(
         res.requesterOwner,
         NOTIFICATION_TYPES.JOB_STATUS_UPDATES,
@@ -961,16 +1024,33 @@ async finalizeSale(id: string, user: User): Promise<Request> {
           text: {
             message: `Congrats! Your sale # ${res.id} has been finalized.`,
           },
-        }
+          // ✅ add inApp + email (ADDED)
+          inApp: {
+            message: {
+              requestId: res.id,
+              title: 'Sale Finalized ✅',
+              description: `Congrats! Your sale #${res.id} has been finalized.`,
+              screen: 'JobDetails',
+              screenParams: { id: res.id },
+            },
+          },
+          email: {
+            template: MAIL_TEMPLATES.NEW_MESSAGE,
+            locals: {
+              subject: 'Sale Finalized ✅',
+              body: `Congrats! Your sale #${res.id} has been finalized.`,
+            },
+          },
+        },
       );
     }
-    // ----------------------------------------------------
 
     return res;
   } catch (err) {
     throw err;
   }
 }
+
 
 
 

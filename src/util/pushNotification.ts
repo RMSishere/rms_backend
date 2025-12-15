@@ -1,9 +1,9 @@
 import admin from '../firebase/firebase-admin';
 
-const OS = {
+export const OS = {
   ANDROID: 'android',
   IOS: 'ios',
-};
+} as const;
 
 export interface Message {
   title: string;
@@ -12,69 +12,105 @@ export interface Message {
 
 export interface Device {
   token: string;
-  os: string;
+  os: string; // 'android' | 'ios'
+}
+
+export interface PushOptions {
+  data?: Record<string, string>;        // ✅ for deep links / type / ids
+  collapseKey?: string;                 // ✅ dedupe on device (best-effort)
+  ttlSeconds?: number;                  // ✅ time-to-live
+  androidChannelId?: string;            // optional
+}
+
+function uniq(arr: string[]) {
+  return Array.from(new Set(arr.filter(Boolean)));
 }
 
 /**
- * CLASS-BASED (multiple devices)
+ * Send push to MANY device tokens
  */
-export default class PushNotification {
-  message: Message;
+export async function sendPushToTokens(
+  tokens: string[],
+  message: Message,
+  opts: PushOptions = {},
+): Promise<{ success: boolean; response?: any; error?: any }> {
+  const cleanTokens = uniq(tokens);
+  if (!cleanTokens.length) return { success: false, error: 'No tokens provided' };
 
-  constructor(message: Message) {
-    this.message = message;
-  }
+  try {
+    const ttl = opts.ttlSeconds ?? 60 * 60 * 24; // default 24h
 
-  async send(devices: Device[]) {
-    const tokens = devices.map((d) => d.token);
-    if (!tokens.length) return;
-
-    await this.sendMultiple(tokens);
-  }
-
-  private async sendMultiple(tokens: string[]) {
-    try {
-      const response = await admin.messaging().sendEachForMulticast({
-        tokens,
-        notification: {
-          title: this.message.title,
-          body:
-            this.message.body ||
-            'This is a notification that will be displayed if your app is in the background.',
+    const response = await admin.messaging().sendEachForMulticast({
+      tokens: cleanTokens,
+      notification: {
+        title: message.title,
+        body: message.body || '',
+      },
+      data: opts.data, // ✅ IMPORTANT: React Native uses this for navigation
+      android: {
+        priority: 'high',
+        ttl: ttl * 1000,
+        collapseKey: opts.collapseKey,
+        notification: opts.androidChannelId
+          ? { channelId: opts.androidChannelId }
+          : undefined,
+      },
+      apns: {
+        headers: {
+          'apns-priority': '10',
+          'apns-expiration': String(Math.floor(Date.now() / 1000) + ttl),
+          ...(opts.collapseKey ? { 'apns-collapse-id': opts.collapseKey } : {}),
         },
-        android: { priority: 'high' },
-      });
+        payload: {
+          aps: {
+            sound: 'default',
+          },
+        },
+      },
+    });
 
-      console.log('✅ Multicast push result:', response);
-    } catch (error) {
-      console.error('❌ Multicast push error:', error);
-    }
+    console.log('✅ Multicast push result:', response);
+    return { success: true, response };
+  } catch (error) {
+    console.error('❌ Multicast push error:', error);
+    return { success: false, error };
   }
 }
 
 /**
- * FUNCTION-BASED (single token)
- * 👉 This is what your controller should call
+ * Send push to ONE token
  */
 export async function sendPushByToken(
   token: string,
   message: Message,
+  opts: PushOptions = {},
 ): Promise<{ success: boolean; response?: any; error?: any }> {
-  if (!token) {
-    return { success: false, error: 'FCM token is required' };
-  }
+  if (!token) return { success: false, error: 'FCM token is required' };
 
   try {
+    const ttl = opts.ttlSeconds ?? 60 * 60 * 24;
+
     const response = await admin.messaging().send({
       token,
       notification: {
         title: message.title,
-        body:
-          message.body ||
-          'This is a notification that will be displayed if your app is in the background.',
+        body: message.body || '',
       },
+      data: opts.data,
       android: {
         priority: 'high',
+        ttl: ttl * 1000,
+        collapseKey: opts.collapseKey,
+      },
+      apns: {
+        headers: {
+          'apns-priority': '10',
+          'apns-expiration': String(Math.floor(Date.now() / 1000) + ttl),
+          ...(opts.collapseKey ? { 'apns-collapse-id': opts.collapseKey } : {}),
+        },
+        payload: {
+          aps: { sound: 'default' },
+        },
       },
     });
 
@@ -84,4 +120,16 @@ export async function sendPushByToken(
     console.error('❌ Push error:', error);
     return { success: false, error };
   }
+}
+
+/**
+ * Convenience: send to a user (many devices)
+ */
+export async function sendPushToUser(
+  user: { devices?: Device[] },
+  message: Message,
+  opts: PushOptions = {},
+) {
+  const tokens = (user.devices || []).map((d) => d.token);
+  return sendPushToTokens(tokens, message, opts);
 }

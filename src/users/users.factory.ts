@@ -209,6 +209,12 @@ async addUser(data: User): Promise<User | APIMessage> {
     // Avatar
     data['avatar'] = getDefaulAvatarUrl(data.firstName, data.lastName);
 
+    // (Recommended) initialize this flag so OTP verification can send only once
+    // Make sure schema has welcomePushSent:boolean default false
+    if (data.role === USER_ROLES.CLIENT) {
+      (data as any).welcomePushSent = false;
+    }
+
     // Notification Subscriptions
     const subscriptions =
       await this.notificationSubscriptionFactory.getAllNotificationSubscriptions(
@@ -239,7 +245,7 @@ async addUser(data: User): Promise<User | APIMessage> {
     res['token'] = await generateToken(savedUser);
 
     // =====================================================
-    // 🟦 GHL SYNC — CONTACT + OPPORTUNITY + TAGS (SKIP FOR ROLE 2)
+    // 🟦 GHL SYNC — CONTACT + OPPORTUNITY + TAGS (SKIP FOR AFFILIATE)
     // =====================================================
     if (data.role !== USER_ROLES.AFFILIATE) {
       try {
@@ -254,17 +260,16 @@ async addUser(data: User): Promise<User | APIMessage> {
           savedUser.ghlContactId = ghlContactId;
 
           // 2️⃣ Add tags to contact
-          const tagsToAdd = ['customer - new']; // You can conditionally add more tags based on role or status
+          const tagsToAdd = ['customer - new'];
           for (const tag of tagsToAdd) {
             const tagAdded = await this.ghlService.addTag(ghlContactId, tag);
             if (tagAdded) console.log(`✅ Tag "${tag}" added to GHL contact`);
           }
         }
 
-        // 3️⃣ Check if the contact already has an existing opportunity
+        // 3️⃣ Create Opportunity if missing
         let oppId = savedUser.ghlCustomerOpportunityId;
-        if (!oppId) {
-          // 4️⃣ If no opportunity exists, create one
+        if (!oppId && ghlContactId) {
           oppId = await this.ghlService.createOpportunity(
             ghlContactId,
             GHL_PIPELINES.CUSTOMERS,
@@ -272,8 +277,10 @@ async addUser(data: User): Promise<User | APIMessage> {
           );
 
           if (oppId) {
-            // Move to desired stage
-            await this.ghlService.moveStage(oppId, GHL_STAGES.CUSTOMERS.NEW_LEAD);
+            await this.ghlService.moveStage(
+              oppId,
+              GHL_STAGES.CUSTOMERS.NEW_LEAD,
+            );
 
             await this.usersModel.updateOne(
               { _id: savedUser._id },
@@ -286,7 +293,7 @@ async addUser(data: User): Promise<User | APIMessage> {
         }
 
         console.log('✅ GHL Sync Completed for addUser()');
-      } catch (ghlErr) {
+      } catch (ghlErr: any) {
         console.error('⚠️ GHL Sync Failed (addUser):', ghlErr?.message || ghlErr);
       }
     } else {
@@ -294,26 +301,14 @@ async addUser(data: User): Promise<User | APIMessage> {
     }
 
     // =====================================================
-    // PUSH NOTIFICATION
+    // ✅ NO WELCOME PUSH HERE
+    // Welcome push should be sent ONLY after OTP verification
+    // in verifyVerificationCode()
     // =====================================================
-    try {
-      const pushPayload = {
-        title: 'Welcome to RunMySale!',
-        body: `Hi ${savedUser.firstName}, your account was successfully created.`,
-        data: { type: 'welcome', userId: savedUser.id.toString() },
-      };
-
-      const result = await sendPushNotificationToUser(savedUser, pushPayload, {
-        quietHours: false,
-      });
-
-      console.log('📲 Push Notification Result:', result);
-    } catch (err) {
-      console.error('⚠️ Push Notification Failed:', err.message || err);
-    }
 
     // =====================================================
     // Background - External Affiliate Sync (Non-Blocking)
+    // (if this endpoint should only apply to affiliates, you may gate it by role)
     // =====================================================
     setImmediate(async () => {
       try {
@@ -338,21 +333,22 @@ async addUser(data: User): Promise<User | APIMessage> {
         );
 
         console.log('✅ External user created (non-blocking)');
-      } catch (externalErr) {
-        const msg = externalErr.response?.data?.message || externalErr.message;
+      } catch (externalErr: any) {
+        const msg = externalErr?.response?.data?.message || externalErr?.message;
         console.error('⚠️ External user creation failed:', msg);
       }
     });
 
     return res;
-  } catch (err) {
+  } catch (err: any) {
     console.error('Error during addUser:', err);
-    if (err.code === 11000) {
+    if (err?.code === 11000) {
       console.error('Duplicate key error details:', err.keyValue);
     }
     throw err;
   }
 }
+
 
 
 
@@ -1135,72 +1131,100 @@ async login(
     }
   }
   
-  async requestVerificationCode(to: string, channel: string): Promise<any> {
-    try {
-      if (!to || !channel) {
-        throw new BadRequestException('Invalid Data');
-      }
-  
-      if (channel === 'email') {
-        // Generate a random 6-digit OTP
-        const otp = Math.floor(100000 + Math.random() * 900000).toString();
-        const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes expiry
-  
-        // Set SendGrid API Key
-        sgMail.setApiKey(process.env.SEND_GRID_API_KEY);
-  
-        const msg = {
-          to,
-          from: 'help@runmysale.com', // Replace with verified sender
-          subject: 'Your Verification Code',
-          text: `Your verification code is ${otp}`,
-          html: `<strong>Your verification code is ${otp}</strong>`,
-        };
-  
-        await sgMail.send(msg);
-  
-        // Store OTP temporarily in memory
-        emailOtpStore.set(to, { otp, expiresAt });
-  
-        console.log(`OTP sent to ${to} via email: ${otp}`);
-        return { channel: 'email', to };
-      } else {
-        const res = await twilioVerifyService.verifications.create({
-          to,
-          channel,
-        });
-  
-        console.log(`OTP sent to ${to} via ${channel}: ${res.sid}`);
-        return res;
-      }
-    } catch (err) {
-       if(channel==='sms' && err.message.includes("Invalid parameter")){
-        // console.log("hiiii",err.message,'./././././');
-        return {
-          statusCode:"400",
-          message:err.message,
-          error:"Invalid Phone Number"
-        }
-      throw new InternalServerErrorException('Failed to send verification code');
-    }else{
-      console.error('SendGrid Error:', err?.response?.body || err.message || err);
-      throw new InternalServerErrorException('Failed to send verification code');
-     
+async requestVerificationCode(to: string, channel: string): Promise<any> {
+  try {
+    if (!to || !channel) {
+      throw new BadRequestException('Invalid Data');
     }
+
+    if (channel === 'email') {
+      // Generate a random 6-digit OTP
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes expiry
+
+      // Set SendGrid API Key
+      sgMail.setApiKey(process.env.SEND_GRID_API_KEY);
+
+      const msg = {
+        to,
+        from: 'help@runmysale.com', // Replace with verified sender
+        subject: 'Your Verification Code',
+        text: `Your verification code is ${otp}`,
+        html: `<strong>Your verification code is ${otp}</strong>`,
+      };
+
+      await sgMail.send(msg);
+
+      // Store OTP temporarily in memory
+      emailOtpStore.set(to, { otp, expiresAt });
+
+      console.log(`OTP sent to ${to} via email: ${otp}`);
+      return { channel: 'email', to };
+    } else {
+      const res = await twilioVerifyService.verifications.create({
+        to,
+        channel,
+      });
+
+      console.log(`OTP sent to ${to} via ${channel}: ${res.sid}`);
+      return res;
+    }
+  } catch (err: any) {
+    if (channel === 'sms' && String(err?.message || '').includes('Invalid parameter')) {
+      return {
+        statusCode: '400',
+        message: err.message,
+        error: 'Invalid Phone Number',
+      };
+    }
+
+    console.error('SendGrid/Twilio Error:', err?.response?.body || err.message || err);
+    throw new InternalServerErrorException('Failed to send verification code');
   }
-  }
+}
+
+
   
   
 
 async verifyVerificationCode(to: string, code: string, role: string): Promise<any> {
-  // Minimal input checks
-  if (!to || !code) {
-    // If you truly want generic 500 for everything, throw 500 here.
-    // Otherwise, 400 is more correct:
-    throw new BadRequestException('Invalid data');
-  }
+  if (!to || !code) throw new BadRequestException('Invalid data');
 
-  // Email path (unchanged)
+  // ✅ helper to send welcome once
+  const sendWelcomeAfterVerify = async (user: any) => {
+    if (!user) return;
+
+    // only for customers
+    if (user.role !== USER_ROLES.CLIENT) return;
+
+    // OPTIONAL: send only once
+    // add a boolean field to user schema: welcomePushSent:boolean (default false)
+    if (user.welcomePushSent) return;
+
+    try {
+      await sendPushNotificationToUser(
+        user,
+        {
+          title: 'Welcome to RunMySale',
+          body: 'Find help fast. Post your first request in under a minute.',
+          data: { type: 'welcome', userId: String(user.id) },
+        },
+        { quietHours: false },
+      );
+
+      // mark as sent (prevents duplicates)
+      await this.usersModel.updateOne(
+        { _id: user._id },
+        { $set: { welcomePushSent: true } },
+      );
+    } catch (e: any) {
+      console.error('⚠️ Welcome push failed:', e?.message || e);
+    }
+  };
+
+  // -------------------------
+  // EMAIL OTP PATH
+  // -------------------------
   if (!to.startsWith('+')) {
     const record = emailOtpStore.get(to);
     if (!record) return new APIMessage('No verification request found', APIMessageTypes.ERROR);
@@ -1215,27 +1239,25 @@ async verifyVerificationCode(to: string, code: string, role: string): Promise<an
 
     const user = await this.usersModel.findOne({ email: to }).exec();
     if (!user) throw new UnauthorizedException();
+
+    // ✅ mark verified (if you use isEmailVerified)
+    await this.usersModel.updateOne({ _id: user._id }, { $set: { isEmailVerified: true } });
+
+    // ✅ send welcome push after OTP verify
+    await sendWelcomeAfterVerify(user);
+
     const token = await generateUserVerificationToken(user);
     return { token };
   }
 
-  // Phone path
-  const cleanedTo = to.replace(/\s+/g, ''); // strip spaces
-  if (!isE164(cleanedTo)) {
-    // You can keep 500 generic if required:
-    // throw new InternalServerErrorException('Internal server error');
-    // Or return 400 to be accurate:
-    throw new BadRequestException('Invalid phone number');
-  }
+  // -------------------------
+  // PHONE OTP PATH
+  // -------------------------
+  const cleanedTo = to.replace(/\s+/g, '');
+  if (!isE164(cleanedTo)) throw new BadRequestException('Invalid phone number');
 
   try {
-    // Must have started verification earlier with the same Verify Service SID:
-    // await twilioVerifyService.verifications.create({ to: cleanedTo, channel: 'sms' });
     const res = await twilioVerifyService.verificationChecks.create({ to: cleanedTo, code });
-
-    if (!res || !Object.values(TWILIO_CHANNEL).includes(res.channel)) {
-      throw new InternalServerErrorException('Internal server error');
-    }
 
     if (res.status === 'approved') {
       const query: any = { phoneNumber: cleanedTo };
@@ -1243,26 +1265,24 @@ async verifyVerificationCode(to: string, code: string, role: string): Promise<an
 
       const user = await this.usersModel.findOne(query).exec();
       if (!user) throw new UnauthorizedException();
+
+      // ✅ mark verified (you use isMobileVerfied)
+      await this.usersModel.updateOne({ _id: user._id }, { $set: { isMobileVerfied: true } });
+
+      // ✅ send welcome push after OTP verify
+      await sendWelcomeAfterVerify(user);
+
       const token = await generateUserVerificationToken(user);
       return { token };
     }
 
-    // Code wrong or expired; if you want generic 500 instead, swap this line
     return new APIMessage('Verification failed', APIMessageTypes.ERROR);
   } catch (err: any) {
-    // Keep details in server logs
     console.error('[Twilio Verify Error]', err?.message || err);
-
-    // If you want the client to ALWAYS see generic 500:
     throw new InternalServerErrorException('Internal server error');
-
-    // If you’d rather map known Twilio issues to 400, use:
-    // if (String(err?.message || '').includes('Invalid parameter `To`')) {
-    //   throw new BadRequestException('Invalid phone number');
-    // }
-    // throw new InternalServerErrorException('Internal server error');
   }
 }
+
   
 
 async updateUserData(
@@ -1871,17 +1891,13 @@ async deleteAffiliateProfileById(
   }
 }
 
-async denyAffiliateById(
-  id: string
-): Promise<{ success: boolean; message: string }> {
+async denyAffiliateById(id: string): Promise<{ success: boolean; message: string }> {
   try {
-    // 1️⃣ Fetch user document
     const userDoc = await this.usersModel.findById(id);
     if (!userDoc) {
       return { success: false, message: 'User not found; status not updated' };
     }
 
-    // 2️⃣ Update local DB → DENIED
     const updatedUser = await this.usersModel.findByIdAndUpdate(
       id,
       {
@@ -1891,17 +1907,18 @@ async denyAffiliateById(
           'businessProfile.approvedDate': null,
         },
       },
-      { new: true } // ✅ return updated doc
+      { new: true },
     );
 
     if (!updatedUser) {
       return { success: false, message: 'Failed to update user status' };
     }
 
-    // 3️⃣ GHL Affiliate → INACTIVE
+    // -----------------------------
+    // 🟩 GHL Affiliate → INACTIVE
+    // -----------------------------
     try {
       if (updatedUser.role === USER_ROLES.AFFILIATE) {
-        // Ensure GHL contact exists
         const ghlContactId =
           updatedUser.ghlContactId ||
           (await this.ghlService.createOrUpdateContact({
@@ -1912,45 +1929,76 @@ async denyAffiliateById(
           }));
 
         if (ghlContactId && !updatedUser.ghlContactId) {
-          await this.usersModel.updateOne(
-            { _id: updatedUser._id },
-            { $set: { ghlContactId } }
-          );
+          await this.usersModel.updateOne({ _id: updatedUser._id }, { $set: { ghlContactId } });
           updatedUser.ghlContactId = ghlContactId;
         }
 
-        // Ensure affiliate opportunity exists
         let oppId = updatedUser.ghlAffiliateOpportunityId;
         if (!oppId) {
-          // ✅ Updated: Only 3 arguments for createOpportunity
-          oppId = await this.ghlService.createOpportunity(
-            ghlContactId,
-            GHL_PIPELINES.AFFILIATES,
-            { name: `${updatedUser.firstName} ${updatedUser.lastName}` } // merged into last arg
-          );
+          oppId = await this.ghlService.createOpportunity(ghlContactId, GHL_PIPELINES.AFFILIATES, {
+            name: `${updatedUser.firstName} ${updatedUser.lastName}`,
+          });
 
           if (oppId) {
             await this.usersModel.updateOne(
               { _id: updatedUser._id },
-              { $set: { ghlAffiliateOpportunityId: oppId } }
+              { $set: { ghlAffiliateOpportunityId: oppId } },
             );
             updatedUser.ghlAffiliateOpportunityId = oppId;
           }
         }
 
-        // Move opportunity stage → INACTIVE
         if (updatedUser.ghlAffiliateOpportunityId) {
-          await this.ghlService.moveStage(
-            updatedUser.ghlAffiliateOpportunityId,
-            GHL_STAGES.AFFILIATES.INACTIVE
-          );
+          await this.ghlService.moveStage(updatedUser.ghlAffiliateOpportunityId, GHL_STAGES.AFFILIATES.INACTIVE);
         }
       }
     } catch (err: any) {
-      console.error(
-        '⚠️ GHL denyAffiliateById ERROR:',
-        err?.message || err
-      );
+      console.error('⚠️ GHL denyAffiliateById ERROR:', err?.message || err);
+    }
+
+    // -----------------------------
+    // 🔔 NOTIFICATIONS
+    // -----------------------------
+    try {
+      await this.notificationfactory.sendNotification(updatedUser, NOTIFICATION_TYPES.APP_UPDATES, {
+        inApp: {
+          message: {
+            title: 'Application Denied ❌',
+            description: 'Your affiliate application has been denied. Please contact support if you think this is a mistake.',
+          },
+        },
+        text: {
+          message: `Hi ${updatedUser.firstName}, your affiliate application was denied. Contact support if needed.`,
+        },
+      });
+
+      try {
+        await sendPushNotificationToUser(
+          updatedUser as any,
+          {
+            title: 'Denied ❌',
+            body: 'Your affiliate application was denied.',
+            data: { type: 'affiliate_denied', userId: String(updatedUser.id) },
+          },
+          { quietHours: false },
+        );
+      } catch (pushErr: any) {
+        console.error('⚠️ Push notify failed (denyAffiliateById):', pushErr?.message || pushErr);
+      }
+
+      const admin = await this.getAdmin();
+      if (admin) {
+        await this.notificationfactory.sendNotification(admin, NOTIFICATION_TYPES.APP_UPDATES, {
+          inApp: {
+            message: {
+              title: 'Affiliate Denied',
+              description: `${updatedUser.firstName} ${updatedUser.lastName} was denied.`,
+            },
+          },
+        });
+      }
+    } catch (notifyErr: any) {
+      console.error('⚠️ Notification failed (denyAffiliateById):', notifyErr?.message || notifyErr);
     }
 
     return { success: true, message: 'Affiliate status set to DENIED' };
@@ -1959,6 +2007,7 @@ async denyAffiliateById(
     throw err;
   }
 }
+
 
 async deleteAffiliateProfileById2(
   this: any,
@@ -2571,11 +2620,7 @@ async approveBusinessProfile(id: string, user: User): Promise<UserDto> {
       'businessProfile.updatedBy': this.getUpdatedBy(user),
     };
 
-    const updatedUser = await this.usersModel.findOneAndUpdate(
-      filter,
-      newValue,
-      { new: true },
-    );
+    const updatedUser = await this.usersModel.findOneAndUpdate(filter, newValue, { new: true });
 
     if (!updatedUser) {
       throw new Error('User not found');
@@ -2588,7 +2633,6 @@ async approveBusinessProfile(id: string, user: User): Promise<UserDto> {
     // -----------------------------
     try {
       if (updatedUser.role === USER_ROLES.AFFILIATE) {
-        // 1️⃣ Ensure contact exists
         const ghlContactId =
           updatedUser.ghlContactId ||
           (await this.ghlService.createOrUpdateContact({
@@ -2599,29 +2643,19 @@ async approveBusinessProfile(id: string, user: User): Promise<UserDto> {
           }));
 
         if (ghlContactId && !updatedUser.ghlContactId) {
-          await this.usersModel.updateOne(
-            { _id: updatedUser._id },
-            { $set: { ghlContactId } },
-          );
+          await this.usersModel.updateOne({ _id: updatedUser._id }, { $set: { ghlContactId } });
           updatedUser.ghlContactId = ghlContactId;
         }
 
-        // 2️⃣ Ensure opportunity exists
         let oppId = updatedUser.ghlAffiliateOpportunityId;
 
         if (!oppId && ghlContactId) {
-          oppId = await this.ghlService.createOpportunity(
-            ghlContactId,
-            GHL_PIPELINES.AFFILIATES,
-            { name: `${updatedUser.firstName} ${updatedUser.lastName}` } // ✅ only 3 args
-          );
+          oppId = await this.ghlService.createOpportunity(ghlContactId, GHL_PIPELINES.AFFILIATES, {
+            name: `${updatedUser.firstName} ${updatedUser.lastName}`,
+          });
 
           if (oppId) {
-            // Move stage to NEW_APPLICATION separately
-            await this.ghlService.moveStage(
-              oppId,
-              GHL_STAGES.AFFILIATES.NEW_APPLICATION,
-            );
+            await this.ghlService.moveStage(oppId, GHL_STAGES.AFFILIATES.NEW_APPLICATION);
 
             await this.usersModel.updateOne(
               { _id: updatedUser._id },
@@ -2631,7 +2665,6 @@ async approveBusinessProfile(id: string, user: User): Promise<UserDto> {
           }
         }
 
-        // 3️⃣ Move stage → APPROVED
         if (updatedUser.ghlAffiliateOpportunityId) {
           await this.ghlService.moveStage(
             updatedUser.ghlAffiliateOpportunityId,
@@ -2639,8 +2672,56 @@ async approveBusinessProfile(id: string, user: User): Promise<UserDto> {
           );
         }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('⚠️ GHL approveBusinessProfile ERROR:', err?.message || err);
+    }
+
+    // -----------------------------
+    // 🔔 NOTIFICATIONS
+    // -----------------------------
+    try {
+      // Notify affiliate
+      await this.notificationfactory.sendNotification(updatedUser, NOTIFICATION_TYPES.APP_UPDATES, {
+        inApp: {
+          message: {
+            title: 'Business Profile Approved ✅',
+            description: 'Your business profile has been approved. You can now receive requests.',
+          },
+        },
+        text: {
+          message: `Hi ${updatedUser.firstName}, your business profile has been approved ✅`,
+        },
+      });
+
+      // Optional push (if devices exist)
+      try {
+        await sendPushNotificationToUser(
+          updatedUser as any,
+          {
+            title: 'Approved ✅',
+            body: 'Your business profile is approved. You can now receive requests.',
+            data: { type: 'affiliate_approved', userId: String(updatedUser.id) },
+          },
+          { quietHours: false },
+        );
+      } catch (pushErr: any) {
+        console.error('⚠️ Push notify failed (approveBusinessProfile):', pushErr?.message || pushErr);
+      }
+
+      // Notify admin as well
+      const admin = await this.getAdmin();
+      if (admin) {
+        await this.notificationfactory.sendNotification(admin, NOTIFICATION_TYPES.APP_UPDATES, {
+          inApp: {
+            message: {
+              title: 'Affiliate Approved',
+              description: `${updatedUser.firstName} ${updatedUser.lastName} was approved.`,
+            },
+          },
+        });
+      }
+    } catch (notifyErr: any) {
+      console.error('⚠️ Notification failed (approveBusinessProfile):', notifyErr?.message || notifyErr);
     }
 
     return res;
@@ -2648,6 +2729,8 @@ async approveBusinessProfile(id: string, user: User): Promise<UserDto> {
     throw err;
   }
 }
+
+
 
 
 
@@ -2687,29 +2770,19 @@ async approveBusinessProfile2(phoneNumber: string, adminUser: User): Promise<Use
           }));
 
         if (ghlContactId && !updatedUser.ghlContactId) {
-          await this.usersModel.updateOne(
-            { _id: updatedUser._id },
-            { $set: { ghlContactId } },
-          );
+          await this.usersModel.updateOne({ _id: updatedUser._id }, { $set: { ghlContactId } });
           updatedUser.ghlContactId = ghlContactId;
         }
 
         let oppId = updatedUser.ghlAffiliateOpportunityId;
 
-        // 1️⃣ Create opportunity if missing
         if (!oppId && ghlContactId) {
-          oppId = await this.ghlService.createOpportunity(
-            ghlContactId,
-            GHL_PIPELINES.AFFILIATES,
-            { name: `${updatedUser.firstName} ${updatedUser.lastName}` } // ✅ only 3 args
-          );
+          oppId = await this.ghlService.createOpportunity(ghlContactId, GHL_PIPELINES.AFFILIATES, {
+            name: `${updatedUser.firstName} ${updatedUser.lastName}`,
+          });
 
           if (oppId) {
-            // Move stage to NEW_APPLICATION separately
-            await this.ghlService.moveStage(
-              oppId,
-              GHL_STAGES.AFFILIATES.NEW_APPLICATION,
-            );
+            await this.ghlService.moveStage(oppId, GHL_STAGES.AFFILIATES.NEW_APPLICATION);
 
             await this.usersModel.updateOne(
               { _id: updatedUser._id },
@@ -2719,7 +2792,6 @@ async approveBusinessProfile2(phoneNumber: string, adminUser: User): Promise<Use
           }
         }
 
-        // 2️⃣ Move stage → APPROVED
         if (updatedUser.ghlAffiliateOpportunityId) {
           await this.ghlService.moveStage(
             updatedUser.ghlAffiliateOpportunityId,
@@ -2727,8 +2799,51 @@ async approveBusinessProfile2(phoneNumber: string, adminUser: User): Promise<Use
           );
         }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('⚠️ GHL approveBusinessProfile2 ERROR:', err?.message || err);
+    }
+
+    // -----------------------------
+    // 🔔 NOTIFICATIONS
+    // -----------------------------
+    try {
+      await this.notificationfactory.sendNotification(updatedUser, NOTIFICATION_TYPES.APP_UPDATES, {
+        inApp: {
+          message: {
+            title: 'Business Profile Approved ✅',
+            description: 'Your business profile has been approved. You can now receive requests.',
+          },
+        },
+        text: { message: `Hi ${updatedUser.firstName}, your business profile has been approved ✅` },
+      });
+
+      try {
+        await sendPushNotificationToUser(
+          updatedUser as any,
+          {
+            title: 'Approved ✅',
+            body: 'Your business profile is approved. You can now receive requests.',
+            data: { type: 'affiliate_approved', userId: String(updatedUser.id) },
+          },
+          { quietHours: false },
+        );
+      } catch (pushErr: any) {
+        console.error('⚠️ Push notify failed (approveBusinessProfile2):', pushErr?.message || pushErr);
+      }
+
+      const admin = await this.getAdmin();
+      if (admin) {
+        await this.notificationfactory.sendNotification(admin, NOTIFICATION_TYPES.APP_UPDATES, {
+          inApp: {
+            message: {
+              title: 'Affiliate Approved',
+              description: `${updatedUser.firstName} ${updatedUser.lastName} was approved.`,
+            },
+          },
+        });
+      }
+    } catch (notifyErr: any) {
+      console.error('⚠️ Notification failed (approveBusinessProfile2):', notifyErr?.message || notifyErr);
     }
 
     return new UserDto(updatedUser);
@@ -2736,6 +2851,7 @@ async approveBusinessProfile2(phoneNumber: string, adminUser: User): Promise<Use
     throw err;
   }
 }
+
 
 
 
@@ -2832,38 +2948,70 @@ async approveBusinessProfileByIdOnly(
 
 
 
-async approveBusinessProfileByIdOnlyy(id: string): Promise<{ success: boolean; data?: UserDto; error?: string }> {
+async approveBusinessProfileByIdOnlyy(
+  id: string,
+): Promise<{ success: boolean; data?: UserDto; error?: string }> {
   try {
-    // 1. Find the user to ensure they exist
     const user = await this.usersModel.findById(id);
     if (!user) {
       return { success: false, error: 'User not found' };
     }
 
-    // 2. Update user in local database
     const updatedUser = await this.usersModel.findOneAndUpdate(
       { _id: id },
       {
         $set: {
           'businessProfile.isApproved': true,
           'businessProfile.approvedDate': new Date(),
-        }
+        },
       },
-      { new: true }
+      { new: true },
     );
 
     if (!updatedUser) {
       return { success: false, error: 'Failed to update user in DB' };
     }
 
+    // -----------------------------
+    // 🔔 NOTIFICATIONS
+    // -----------------------------
+    try {
+      await this.notificationfactory.sendNotification(updatedUser, NOTIFICATION_TYPES.APP_UPDATES, {
+        inApp: {
+          message: {
+            title: 'Business Profile Approved ✅',
+            description: 'Your business profile has been approved.',
+          },
+        },
+        text: { message: `Hi ${updatedUser.firstName}, your business profile is approved ✅` },
+      });
+
+      try {
+        await sendPushNotificationToUser(
+          updatedUser as any,
+          {
+            title: 'Approved ✅',
+            body: 'Your business profile is approved.',
+            data: { type: 'business_profile_approved', userId: String(updatedUser.id) },
+          },
+          { quietHours: false },
+        );
+      } catch (pushErr: any) {
+        console.error('⚠️ Push notify failed (approveBusinessProfileByIdOnlyy):', pushErr?.message || pushErr);
+      }
+    } catch (notifyErr: any) {
+      console.error('⚠️ Notification failed (approveBusinessProfileByIdOnlyy):', notifyErr?.message || notifyErr);
+    }
+
     return { success: true, data: new UserDto(updatedUser) };
-  } catch (err) {
+  } catch (err: any) {
     return { success: false, error: err.message || 'An unexpected error occurred' };
   }
 }
 
+
 async approveBusinessProfileByEmailOnly(
-  email: string
+  email: string,
 ): Promise<{ success: boolean; data?: UserDto; error?: string }> {
   try {
     const user = await this.usersModel.findOne({ email });
@@ -2879,7 +3027,7 @@ async approveBusinessProfileByEmailOnly(
           'businessProfile.approvedDate': new Date(),
         },
       },
-      { new: true }
+      { new: true },
     );
 
     // -----------------------------
@@ -2897,29 +3045,19 @@ async approveBusinessProfileByEmailOnly(
           }));
 
         if (ghlContactId && !updatedUser.ghlContactId) {
-          await this.usersModel.updateOne(
-            { _id: updatedUser._id },
-            { $set: { ghlContactId } },
-          );
+          await this.usersModel.updateOne({ _id: updatedUser._id }, { $set: { ghlContactId } });
           updatedUser.ghlContactId = ghlContactId;
         }
 
         let oppId = updatedUser.ghlAffiliateOpportunityId;
 
-        // 1️⃣ Create opportunity if missing
         if (!oppId && ghlContactId) {
-          oppId = await this.ghlService.createOpportunity(
-            ghlContactId,
-            GHL_PIPELINES.AFFILIATES,
-            { name: `${updatedUser.firstName} ${updatedUser.lastName}` } // ✅ extra object only
-          );
+          oppId = await this.ghlService.createOpportunity(ghlContactId, GHL_PIPELINES.AFFILIATES, {
+            name: `${updatedUser.firstName} ${updatedUser.lastName}`,
+          });
 
           if (oppId) {
-            // Move stage to NEW_APPLICATION separately
-            await this.ghlService.moveStage(
-              oppId,
-              GHL_STAGES.AFFILIATES.NEW_APPLICATION,
-            );
+            await this.ghlService.moveStage(oppId, GHL_STAGES.AFFILIATES.NEW_APPLICATION);
 
             await this.usersModel.updateOne(
               { _id: updatedUser._id },
@@ -2929,7 +3067,6 @@ async approveBusinessProfileByEmailOnly(
           }
         }
 
-        // 2️⃣ Move stage → APPROVED
         if (updatedUser.ghlAffiliateOpportunityId) {
           await this.ghlService.moveStage(
             updatedUser.ghlAffiliateOpportunityId,
@@ -2937,18 +3074,47 @@ async approveBusinessProfileByEmailOnly(
           );
         }
       }
-    } catch (err) {
-      console.error(
-        '⚠️ GHL approveBusinessProfileByEmailOnly ERROR:',
-        err?.message || err,
-      );
+    } catch (err: any) {
+      console.error('⚠️ GHL approveBusinessProfileByEmailOnly ERROR:', err?.message || err);
+    }
+
+    // -----------------------------
+    // 🔔 NOTIFICATIONS
+    // -----------------------------
+    try {
+      await this.notificationfactory.sendNotification(updatedUser, NOTIFICATION_TYPES.APP_UPDATES, {
+        inApp: {
+          message: {
+            title: 'Approved ✅',
+            description: 'Your business profile has been approved.',
+          },
+        },
+        text: { message: `Hi ${updatedUser.firstName}, your business profile is approved ✅` },
+      });
+
+      try {
+        await sendPushNotificationToUser(
+          updatedUser as any,
+          {
+            title: 'Approved ✅',
+            body: 'Your business profile is approved.',
+            data: { type: 'business_profile_approved', userId: String(updatedUser.id) },
+          },
+          { quietHours: false },
+        );
+      } catch (pushErr: any) {
+        console.error('⚠️ Push notify failed (approveBusinessProfileByEmailOnly):', pushErr?.message || pushErr);
+      }
+    } catch (notifyErr: any) {
+      console.error('⚠️ Notification failed (approveBusinessProfileByEmailOnly):', notifyErr?.message || notifyErr);
     }
 
     return { success: true, data: new UserDto(updatedUser) };
-  } catch (err) {
+  } catch (err: any) {
     return { success: false, error: err?.message || 'Unexpected error' };
   }
 }
+
 
 
 

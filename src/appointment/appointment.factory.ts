@@ -3,11 +3,14 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { PaginatedData } from 'src/common/interfaces';
 
-import { paginationLimit } from '../config';
+import { paginationLimit, NOTIFICATION_TYPES } from '../config';
 import { BaseFactory } from '../lib/base.factory';
 import { Appointment, Counter, User } from '../lib/index';
 import { AppointmentDto } from './appointment.dto';
 import moment = require('moment');
+
+// ✅ add
+import { NotificationFactory } from 'src/notification/notification.factory';
 
 @Injectable()
 export class AppointmentFactory extends BaseFactory {
@@ -15,6 +18,9 @@ export class AppointmentFactory extends BaseFactory {
     @InjectModel('Appointment')
     public readonly appointmentModel: Model<Appointment>,
     @InjectModel('counters') public readonly countersModel: Model<Counter>,
+
+    // ✅ add
+    public readonly notificationFactory: NotificationFactory,
   ) {
     super(countersModel);
   }
@@ -27,13 +33,82 @@ export class AppointmentFactory extends BaseFactory {
       appointment.id = await this.generateSequentialId('Appointment');
       appointment.appointer = user;
       appointment.createdBy = this.getCreatedBy(user);
+
       const newAppointment = new this.appointmentModel(appointment);
-      let res = await newAppointment.save();
-      res = await res
-        .populate('appointee')
-        .populate('appointer')
-        .execPopulate();
+
+      let res: any = await newAppointment.save();
+      res = await res.populate('appointee').populate('appointer').execPopulate();
+
       const result = new AppointmentDto(res);
+
+      // ✅ NOTIFICATION (real-time): appointment created
+      try {
+        const appointee: any = res?.appointee;
+        const appointer: any = res?.appointer;
+
+        const start = res?.startTime
+          ? moment(res.startTime).format('MMMM Do YYYY, h:mm A')
+          : 'Scheduled';
+
+        const title = `You’re scheduled`;
+        const description = `Your appointment is set for ${start}.`;
+
+        if (appointee) {
+          await this.notificationFactory.sendNotification(
+            appointee,
+            NOTIFICATION_TYPES.JOB_STATUS_UPDATES,
+            {
+              inApp: {
+                message: {
+                  type: 'appointment_created',
+                  appointmentId: result.id,
+                  title,
+                  description,
+                  screen: 'Appointments',
+                  screenParams: { id: result.id },
+                },
+              },
+              push: {
+                title,
+                body: description,
+                data: { type: 'appointment_created', appointmentId: result.id },
+                quietHours: false, // real-time event
+              },
+            },
+          );
+        }
+
+        // Optional: notify appointer too (affiliate/admin)
+        if (appointer && appointer?._id?.toString() !== appointee?._id?.toString()) {
+          await this.notificationFactory.sendNotification(
+            appointer,
+            NOTIFICATION_TYPES.JOB_STATUS_UPDATES,
+            {
+              inApp: {
+                message: {
+                  type: 'appointment_created_appointer',
+                  appointmentId: result.id,
+                  title: 'Appointment created',
+                  description: `Appointment created for ${start}.`,
+                  screen: 'Appointments',
+                  screenParams: { id: result.id },
+                },
+              },
+              push: {
+                title: 'Appointment created',
+                body: `Appointment created for ${start}.`,
+                data: { type: 'appointment_created', appointmentId: result.id },
+                quietHours: false,
+              },
+            },
+          );
+        }
+      } catch (notifyErr: any) {
+        console.error(
+          '⚠️ Appointment create notification failed:',
+          notifyErr?.message || notifyErr,
+        );
+      }
 
       return result;
     } catch (err) {
@@ -46,7 +121,7 @@ export class AppointmentFactory extends BaseFactory {
     user: User,
   ): Promise<PaginatedData> {
     const skip = parseInt(params.skip) || 0;
-    const filter = { isActive: true };
+    const filter: any = { isActive: true };
 
     try {
       if (params.type) {
@@ -55,24 +130,15 @@ export class AppointmentFactory extends BaseFactory {
 
       if (params.timeType) {
         if (params.timeType === 'upcoming') {
-          filter['startTime'] = {
-            $gte: moment().toISOString(),
-          };
+          filter['startTime'] = { $gte: moment().toISOString() };
         }
       }
-
-      // if (params.onDate) {
-      //   filter['createdAt'] = {
-      //     $gte: moment(params.onDate, 'YYYY-MM-DD').toISOString(),
-      //     $lt: moment(params.onDate, 'YYYY-MM-DD').add(1, 'day').toISOString()
-      //   };
-      // }
 
       filter['appointee'] = user;
 
       const count = await this.appointmentModel.countDocuments(filter);
 
-      const Appointments = await this.appointmentModel
+      const appointments = await this.appointmentModel
         .find(filter)
         .skip(skip)
         .limit(paginationLimit)
@@ -80,11 +146,9 @@ export class AppointmentFactory extends BaseFactory {
         .populate('appointmentFor')
         .sort({ createdAt: 'desc' });
 
-      const result = Appointments.map(res => new AppointmentDto(res));
+      const result = appointments.map((res: any) => new AppointmentDto(res));
 
-      const res = { result, count, skip };
-
-      return res;
+      return { result, count, skip };
     } catch (error) {
       throw error;
     }
@@ -99,9 +163,7 @@ export class AppointmentFactory extends BaseFactory {
         .populate('appointmentFor')
         .exec();
 
-      const result = new AppointmentDto(appointment);
-
-      return result;
+      return new AppointmentDto(appointment as any);
     } catch (err) {
       throw err;
     }
@@ -113,19 +175,113 @@ export class AppointmentFactory extends BaseFactory {
     user: User,
   ): Promise<Appointment> {
     try {
+      // ✅ fetch old appointment to detect reschedule
+      const prev: any = await this.appointmentModel
+        .findOne({ id, isActive: true })
+        .populate('appointee')
+        .populate('appointer')
+        .exec();
+
       data.updatedBy = this.getUpdatedBy(user);
 
       const filter = { id, isActive: true };
       const newValue = { $set: data };
-      const updatedAppointment = await this.appointmentModel.findOneAndUpdate(
-        filter,
-        newValue,
-        { new: true },
-      );
 
-      const appointment = new AppointmentDto(updatedAppointment);
+      const updated: any = await this.appointmentModel
+        .findOneAndUpdate(filter, newValue, { new: true })
+        .populate('appointee')
+        .populate('appointer')
+        .exec();
 
-      return appointment;
+      const appointmentDto = new AppointmentDto(updated);
+
+      // ✅ NOTIFICATION (real-time): rescheduled (if startTime changed)
+      try {
+        const prevStart = prev?.startTime ? new Date(prev.startTime).getTime() : null;
+        const nextStart = updated?.startTime ? new Date(updated.startTime).getTime() : null;
+
+        const startTimeChanged =
+          prevStart !== null &&
+          nextStart !== null &&
+          prevStart !== nextStart;
+
+        if (startTimeChanged) {
+          const appointee: any = updated?.appointee;
+          const appointer: any = updated?.appointer;
+
+          const start = updated?.startTime
+            ? moment(updated.startTime).format('MMMM Do YYYY, h:mm A')
+            : 'Updated';
+
+          const title = `Appointment Rescheduled`;
+          const description = `Your appointment was rescheduled to ${start}.`;
+
+          // notify appointee
+          if (appointee) {
+            await this.notificationFactory.sendNotification(
+              appointee,
+              NOTIFICATION_TYPES.JOB_STATUS_UPDATES,
+              {
+                inApp: {
+                  message: {
+                    type: 'appointment_rescheduled',
+                    appointmentId: appointmentDto.id,
+                    title,
+                    description,
+                    screen: 'Appointments',
+                    screenParams: { id: appointmentDto.id },
+                  },
+                },
+                push: {
+                  title,
+                  body: description,
+                  data: {
+                    type: 'appointment_rescheduled',
+                    appointmentId: appointmentDto.id,
+                  },
+                  quietHours: false, // real-time event
+                },
+              },
+            );
+          }
+
+          // notify appointer too
+          if (appointer && appointer?._id?.toString() !== appointee?._id?.toString()) {
+            await this.notificationFactory.sendNotification(
+              appointer,
+              NOTIFICATION_TYPES.JOB_STATUS_UPDATES,
+              {
+                inApp: {
+                  message: {
+                    type: 'appointment_rescheduled_appointer',
+                    appointmentId: appointmentDto.id,
+                    title,
+                    description: `Appointment rescheduled to ${start}.`,
+                    screen: 'Appointments',
+                    screenParams: { id: appointmentDto.id },
+                  },
+                },
+                push: {
+                  title,
+                  body: `Appointment rescheduled to ${start}.`,
+                  data: {
+                    type: 'appointment_rescheduled',
+                    appointmentId: appointmentDto.id,
+                  },
+                  quietHours: false,
+                },
+              },
+            );
+          }
+        }
+      } catch (notifyErr: any) {
+        console.error(
+          '⚠️ Appointment update notification failed:',
+          notifyErr?.message || notifyErr,
+        );
+      }
+
+      return appointmentDto;
     } catch (err) {
       throw err;
     }

@@ -128,6 +128,8 @@ export const CHARGE_BASIS = {
 
 export enum SCHEDULE_JOB {
   SEND_MAIL = 'SEND_MAIL',
+    SEND_PUSH = 'SEND_PUSH', // ✅ add this
+
 }
 
 export const SCHEDULE_JOB_TYPES = [SCHEDULE_JOB.SEND_MAIL];
