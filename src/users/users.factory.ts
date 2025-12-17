@@ -1209,8 +1209,7 @@ async verifyVerificationCode(
   // -------------------------
   const persistDeviceIfProvided = async (user: any) => {
     if (!user?._id) return user;
-
-    if (!device?.token) return user; // nothing to persist
+    if (!device?.token) return user;
 
     // ✅ reuse your existing helper
     const updated = await this.updateDeviceToken(user, device);
@@ -1254,7 +1253,7 @@ async verifyVerificationCode(
 
       console.log('📤 Welcome push result:', pushRes);
 
-      // mark as sent ONLY if we actually attempted (or if sent>0)
+      // ✅ mark as sent (prevents duplicates)
       await this.usersModel.updateOne(
         { _id: user._id },
         { $set: { welcomePushSent: true } },
@@ -1265,16 +1264,29 @@ async verifyVerificationCode(
   };
 
   // -------------------------
+  // ✅ helper: delay welcome push 30s (non-blocking)
+  // -------------------------
+  const sendWelcomeAfter30s = (user: any) => {
+    setTimeout(() => {
+      sendWelcomeAfterVerify(user).catch((e) =>
+        console.error('⚠️ Delayed welcome push failed:', e?.message || e),
+      );
+    }, 30_000);
+  };
+
+  // -------------------------
   // EMAIL OTP PATH
   // -------------------------
   if (!to.startsWith('+')) {
-    const record = emailOtpStore.get(to);
+    const email = to.toLowerCase().trim();
+    const record = emailOtpStore.get(email) || emailOtpStore.get(to);
 
     if (!record) {
       return new APIMessage('No verification request found', APIMessageTypes.ERROR);
     }
 
     if (Date.now() > record.expiresAt) {
+      emailOtpStore.delete(email);
       emailOtpStore.delete(to);
       return new APIMessage('Verification code expired', APIMessageTypes.ERROR);
     }
@@ -1283,9 +1295,10 @@ async verifyVerificationCode(
       return new APIMessage('Invalid verification code', APIMessageTypes.ERROR);
     }
 
+    emailOtpStore.delete(email);
     emailOtpStore.delete(to);
 
-    let user = await this.usersModel.findOne({ email: to.toLowerCase() }).exec();
+    let user = await this.usersModel.findOne({ email }).exec();
     if (!user) throw new UnauthorizedException();
 
     // ✅ persist device if frontend provided it
@@ -1294,11 +1307,11 @@ async verifyVerificationCode(
     // ✅ mark verified
     await this.usersModel.updateOne(
       { _id: user._id },
-      { $set: { isEmailVerified: true } }
+      { $set: { isEmailVerified: true } },
     );
 
-    // ✅ send welcome push after OTP verify
-    await sendWelcomeAfterVerify(user);
+    // ✅ send welcome push AFTER 30 seconds
+    sendWelcomeAfter30s(user);
 
     const token = await generateUserVerificationToken(user);
     return { token };
@@ -1335,11 +1348,11 @@ async verifyVerificationCode(
     // ✅ mark verified
     await this.usersModel.updateOne(
       { _id: user._id },
-      { $set: { isMobileVerfied: true } }
+      { $set: { isMobileVerfied: true } },
     );
 
-    // ✅ send welcome push after OTP verify
-    await sendWelcomeAfterVerify(user);
+    // ✅ send welcome push AFTER 30 seconds
+    sendWelcomeAfter30s(user);
 
     const token = await generateUserVerificationToken(user);
     return { token };
@@ -1348,6 +1361,7 @@ async verifyVerificationCode(
     throw new InternalServerErrorException('Internal server error');
   }
 }
+
 
 
   
