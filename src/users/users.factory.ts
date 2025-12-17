@@ -1191,36 +1191,50 @@ async verifyVerificationCode(to: string, code: string, role: string): Promise<an
   if (!to || !code) throw new BadRequestException('Invalid data');
 
   // ✅ helper to send welcome once
-  const sendWelcomeAfterVerify = async (user: any) => {
-    if (!user) return;
+ // ✅ helper to send welcome once
+const sendWelcomeAfterVerify = async (user: any) => {
+  if (!user) return;
 
-    // only for customers
-    if (user.role !== USER_ROLES.CLIENT) return;
+  // only for customers
+  if (user.role !== USER_ROLES.CLIENT) return;
 
-    // OPTIONAL: send only once
-    // add a boolean field to user schema: welcomePushSent:boolean (default false)
-    if (user.welcomePushSent) return;
+  // 🔥 IMPORTANT: refetch latest user WITH devices (and welcomePushSent)
+  const freshUser = await this.usersModel
+    .findById(user._id)
+    .select('id role devices welcomePushSent')
+    .lean()
+    .exec();
 
-    try {
-      await sendPushNotificationToUser(
-        user,
-        {
-          title: 'Welcome to RunMySale',
-          body: 'Find help fast. Post your first request in under a minute.',
-          data: { type: 'welcome', userId: String(user.id) },
-        },
-        { quietHours: false },
-      );
+  if (!freshUser) return;
 
-      // mark as sent (prevents duplicates)
-      await this.usersModel.updateOne(
-        { _id: user._id },
-        { $set: { welcomePushSent: true } },
-      );
-    } catch (e: any) {
-      console.error('⚠️ Welcome push failed:', e?.message || e);
-    }
-  };
+  // if (freshUser.welcomePushSent) return;
+
+  // ✅ DEBUG LOGS (temporarily)
+  console.log('📲 Welcome push devices:', freshUser.devices);
+
+  try {
+    const pushRes = await sendPushNotificationToUser(
+      freshUser,
+      {
+        title: 'Welcome to RunMySale',
+        body: 'Find help fast. Post your first request in under a minute.',
+        data: { type: 'welcome', userId: String(freshUser.id) },
+      },
+      { quietHours: false },
+    );
+
+    console.log('📤 Welcome push result:', pushRes);
+
+    // mark as sent (prevents duplicates)
+    await this.usersModel.updateOne(
+      { _id: user._id },
+      { $set: { welcomePushSent: true } },
+    );
+  } catch (e: any) {
+    console.error('⚠️ Welcome push failed:', e?.message || e);
+  }
+};
+
 
   // -------------------------
   // EMAIL OTP PATH
