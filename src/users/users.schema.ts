@@ -30,7 +30,7 @@ export const usersSchema = new mongoose.Schema(
     isEmailVerified: { type: Boolean, default: false },
     addedMiscInfo: { type: Boolean, default: false },
     isActive: { type: Boolean, default: true },
-
+    welcomePushSent: { type: Boolean, default: false },
     countryCode: { type: String, default: '' },
     callingCode: { type: String, default: '' },
     isSocialLogin: { type: Boolean, default: false },

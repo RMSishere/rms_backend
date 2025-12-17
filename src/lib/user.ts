@@ -29,6 +29,7 @@ export interface User extends Base {
   avatar: string;
   email: string;
   password?: string;
+  welcomePushSent?:boolean;
   countryCode: string;
   callingCode: string;
   phoneNumber: string;

@@ -1187,75 +1187,115 @@ async requestVerificationCode(to: string, channel: string): Promise<any> {
   
   
 
-async verifyVerificationCode(to: string, code: string, role: string): Promise<any> {
+async verifyVerificationCode(
+  to: string,
+  code: string,
+  role?: string | number,
+  device?: Device, // ✅ { token: string; os: 'ios' | 'android' | 'unknown' }
+): Promise<any> {
   if (!to || !code) throw new BadRequestException('Invalid data');
 
-  // ✅ helper to send welcome once
- // ✅ helper to send welcome once
-const sendWelcomeAfterVerify = async (user: any) => {
-  if (!user) return;
+  // -------------------------
+  // ✅ helper: normalize role
+  // -------------------------
+  const normalizeRole = (r: any): number | undefined => {
+    if (r === undefined || r === null || r === '') return undefined;
+    const n = Number(r);
+    return Number.isFinite(n) ? n : undefined;
+  };
 
-  // only for customers
-  if (user.role !== USER_ROLES.CLIENT) return;
+  // -------------------------
+  // ✅ helper: persist device token
+  // -------------------------
+  const persistDeviceIfProvided = async (user: any) => {
+    if (!user?._id) return user;
 
-  // 🔥 IMPORTANT: refetch latest user WITH devices (and welcomePushSent)
-  const freshUser = await this.usersModel
-    .findById(user._id)
-    .select('id role devices welcomePushSent')
-    .lean()
-    .exec();
+    if (!device?.token) return user; // nothing to persist
 
-  if (!freshUser) return;
+    // ✅ reuse your existing helper
+    const updated = await this.updateDeviceToken(user, device);
+    return updated;
+  };
 
-  // if (freshUser.welcomePushSent) return;
+  // -------------------------
+  // ✅ helper: send welcome after verify (once)
+  // -------------------------
+  const sendWelcomeAfterVerify = async (user: any) => {
+    if (!user) return;
+    if (user.role !== USER_ROLES.CLIENT) return;
 
-  // ✅ DEBUG LOGS (temporarily)
-  console.log('📲 Welcome push devices:', freshUser.devices);
+    // 🔥 refetch fresh data WITH devices
+    const freshUser = await this.usersModel
+      .findById(user._id)
+      .select('id role devices welcomePushSent')
+      .lean()
+      .exec();
 
-  try {
-    const pushRes = await sendPushNotificationToUser(
-      freshUser,
-      {
-        title: 'Welcome to RunMySale',
-        body: 'Find help fast. Post your first request in under a minute.',
-        data: { type: 'welcome', userId: String(freshUser.id) },
-      },
-      { quietHours: false },
-    );
+    if (!freshUser) return;
 
-    console.log('📤 Welcome push result:', pushRes);
+    console.log('📲 Welcome push devices:', freshUser.devices);
 
-    // mark as sent (prevents duplicates)
-    await this.usersModel.updateOne(
-      { _id: user._id },
-      { $set: { welcomePushSent: true } },
-    );
-  } catch (e: any) {
-    console.error('⚠️ Welcome push failed:', e?.message || e);
-  }
-};
+    // ✅ don’t spam
+    if (freshUser.welcomePushSent) {
+      console.log('⚠️ Welcome push already sent, skipping');
+      return;
+    }
 
+    try {
+      const pushRes = await sendPushNotificationToUser(
+        freshUser,
+        {
+          title: 'Welcome to RunMySale',
+          body: 'Find help fast. Post your first request in under a minute.',
+          data: { type: 'welcome', userId: String(freshUser.id) },
+        },
+        { quietHours: false },
+      );
+
+      console.log('📤 Welcome push result:', pushRes);
+
+      // mark as sent ONLY if we actually attempted (or if sent>0)
+      await this.usersModel.updateOne(
+        { _id: user._id },
+        { $set: { welcomePushSent: true } },
+      );
+    } catch (e: any) {
+      console.error('⚠️ Welcome push failed:', e?.message || e);
+    }
+  };
 
   // -------------------------
   // EMAIL OTP PATH
   // -------------------------
   if (!to.startsWith('+')) {
     const record = emailOtpStore.get(to);
-    if (!record) return new APIMessage('No verification request found', APIMessageTypes.ERROR);
+
+    if (!record) {
+      return new APIMessage('No verification request found', APIMessageTypes.ERROR);
+    }
+
     if (Date.now() > record.expiresAt) {
       emailOtpStore.delete(to);
       return new APIMessage('Verification code expired', APIMessageTypes.ERROR);
     }
+
     if (record.otp !== code) {
       return new APIMessage('Invalid verification code', APIMessageTypes.ERROR);
     }
+
     emailOtpStore.delete(to);
 
-    const user = await this.usersModel.findOne({ email: to }).exec();
+    let user = await this.usersModel.findOne({ email: to.toLowerCase() }).exec();
     if (!user) throw new UnauthorizedException();
 
-    // ✅ mark verified (if you use isEmailVerified)
-    await this.usersModel.updateOne({ _id: user._id }, { $set: { isEmailVerified: true } });
+    // ✅ persist device if frontend provided it
+    user = await persistDeviceIfProvided(user);
+
+    // ✅ mark verified
+    await this.usersModel.updateOne(
+      { _id: user._id },
+      { $set: { isEmailVerified: true } }
+    );
 
     // ✅ send welcome push after OTP verify
     await sendWelcomeAfterVerify(user);
@@ -1271,31 +1311,44 @@ const sendWelcomeAfterVerify = async (user: any) => {
   if (!isE164(cleanedTo)) throw new BadRequestException('Invalid phone number');
 
   try {
-    const res = await twilioVerifyService.verificationChecks.create({ to: cleanedTo, code });
+    const res = await twilioVerifyService.verificationChecks.create({
+      to: cleanedTo,
+      code,
+    });
 
-    if (res.status === 'approved') {
-      const query: any = { phoneNumber: cleanedTo };
-      if (role) query.role = role;
-
-      const user = await this.usersModel.findOne(query).exec();
-      if (!user) throw new UnauthorizedException();
-
-      // ✅ mark verified (you use isMobileVerfied)
-      await this.usersModel.updateOne({ _id: user._id }, { $set: { isMobileVerfied: true } });
-
-      // ✅ send welcome push after OTP verify
-      await sendWelcomeAfterVerify(user);
-
-      const token = await generateUserVerificationToken(user);
-      return { token };
+    if (res.status !== 'approved') {
+      return new APIMessage('Verification failed', APIMessageTypes.ERROR);
     }
 
-    return new APIMessage('Verification failed', APIMessageTypes.ERROR);
+    const query: any = { phoneNumber: cleanedTo };
+
+    // ✅ IMPORTANT: role is number in DB
+    const normalizedRole = normalizeRole(role);
+    if (normalizedRole !== undefined) query.role = normalizedRole;
+
+    let user = await this.usersModel.findOne(query).exec();
+    if (!user) throw new UnauthorizedException();
+
+    // ✅ persist device if frontend provided it
+    user = await persistDeviceIfProvided(user);
+
+    // ✅ mark verified
+    await this.usersModel.updateOne(
+      { _id: user._id },
+      { $set: { isMobileVerfied: true } }
+    );
+
+    // ✅ send welcome push after OTP verify
+    await sendWelcomeAfterVerify(user);
+
+    const token = await generateUserVerificationToken(user);
+    return { token };
   } catch (err: any) {
     console.error('[Twilio Verify Error]', err?.message || err);
     throw new InternalServerErrorException('Internal server error');
   }
 }
+
 
   
 
