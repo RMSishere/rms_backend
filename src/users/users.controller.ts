@@ -38,6 +38,7 @@ import { Request } from 'express';
 import * as jwt from 'jsonwebtoken';
 import { generateToken } from 'src/util/auth';
 import { sendPushByToken } from 'src/util/pushNotification';
+import { sendIosPushByToken } from 'src/util/notification.util';
 
 function unwrapBody(raw: any): any {
   if (raw == null) return undefined;
@@ -87,7 +88,29 @@ export class UserController {
 ) {
     
   }
+@Post('send-ios-push-token')
+async sendIosPushUsingToken(
+  @Body() body: { token: string; title: string; message?: string; data?: Record<string, string> },
+) {
+  const token = (body?.token || '').trim();
+  const title = (body?.title || '').trim();
+  const message = (body?.message || '').trim();
 
+  if (!token || !title) {
+    throw new HttpException('token and title are required', HttpStatus.BAD_REQUEST);
+  }
+
+  return await sendIosPushByToken(
+    token,
+    { title, body: message || 'Test notification from backend ✅' },
+    {
+      data: body?.data || {},
+      ttlSeconds: 60 * 60,          // 1 hour test
+      collapseId: 'test-ios-push',   // dedupe on iOS if you re-send
+      sound: 'default',
+    },
+  );
+}
 @Post('register')
 async addUser(@Body() data: UserDto) {
   try {

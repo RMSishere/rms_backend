@@ -19,9 +19,9 @@ export interface Device {
 
 export interface PushOptions {
   data?: Record<string, string>; // ✅ deep links / type / ids
-  collapseKey?: string;          // ✅ best-effort dedupe
-  ttlSeconds?: number;           // ✅ time-to-live
-  androidChannelId?: string;     // optional
+  collapseKey?: string; // ✅ best-effort dedupe
+  ttlSeconds?: number; // ✅ time-to-live
+  androidChannelId?: string; // optional
 }
 
 export interface PushPayload {
@@ -32,11 +32,21 @@ export interface PushPayload {
 
 export interface NotificationOptions extends PushOptions {
   quietHours?: boolean; // suppress during quiet hours
-  quietStart?: number;  // default 21 (9pm)
-  quietEnd?: number;    // default 8 (8am)
-  timezone?: string;    // default America/New_York
-  dedupeKey?: string;   // reserved
-  skipIf?: boolean;     // suppression flag
+  quietStart?: number; // default 21 (9pm)
+  quietEnd?: number; // default 8 (8am)
+  timezone?: string; // default America/New_York
+  dedupeKey?: string; // reserved
+  skipIf?: boolean; // suppression flag
+}
+
+/** iOS-only options (APNs specific) */
+export interface IosPushOptions {
+  data?: Record<string, string>;
+  ttlSeconds?: number; // default 24h
+  collapseId?: string; // maps to apns-collapse-id (iOS dedupe)
+  sound?: string; // default "default"
+  badge?: number; // optional
+  contentAvailable?: boolean; // background update (silent push)
 }
 
 function uniq(arr: string[]) {
@@ -53,6 +63,56 @@ function isQuietHour(nowHour: number, quietStart: number, quietEnd: number) {
   if (quietStart === quietEnd) return true;
   if (quietStart < quietEnd) return nowHour >= quietStart && nowHour < quietEnd;
   return nowHour >= quietStart || nowHour < quietEnd;
+}
+
+/** Helper: APNs expiration (seconds since epoch) */
+function apnsExpirationSeconds(ttlSeconds: number) {
+  return String(Math.floor(Date.now() / 1000) + ttlSeconds);
+}
+
+/**
+ * ✅ iOS-only: Send push to ONE iOS device (FCM token) with APNs config
+ * NOTE: token is the Firebase Messaging registration token from iOS app (not raw APNs token)
+ */
+export async function sendIosPushByToken(
+  token: string,
+  payload: { title: string; body?: string },
+  opts: IosPushOptions = {},
+): Promise<{ success: boolean; response?: any; error?: any }> {
+  if (!token) return { success: false, error: 'FCM token is required' };
+  if (!payload?.title) return { success: false, error: 'title is required' };
+
+  try {
+    const ttl = opts.ttlSeconds ?? 60 * 60 * 24;
+    const response = await admin.messaging().send({
+      token,
+      notification: {
+        title: payload.title,
+        body: payload.body || '',
+      },
+      data: safeData(opts.data),
+      apns: {
+        headers: {
+          'apns-push-type': opts.contentAvailable ? 'background' : 'alert',
+          'apns-priority': opts.contentAvailable ? '5' : '10',
+          'apns-expiration': apnsExpirationSeconds(ttl),
+          ...(opts.collapseId ? { 'apns-collapse-id': opts.collapseId } : {}),
+        },
+        payload: {
+          aps: {
+            ...(opts.contentAvailable ? { 'content-available': 1 } : {}),
+            ...(opts.sound ? { sound: opts.sound } : { sound: 'default' }),
+            ...(typeof opts.badge === 'number' ? { badge: opts.badge } : {}),
+          },
+        },
+      },
+    });
+
+    return { success: true, response };
+  } catch (error: any) {
+    console.error('❌ iOS Push error:', error?.message || error);
+    return { success: false, error };
+  }
 }
 
 /**
@@ -85,7 +145,7 @@ export async function sendPushToTokens(
       apns: {
         headers: {
           'apns-priority': '10',
-          'apns-expiration': String(Math.floor(Date.now() / 1000) + ttl),
+          'apns-expiration': apnsExpirationSeconds(ttl),
           ...(opts.collapseKey ? { 'apns-collapse-id': opts.collapseKey } : {}),
         },
         payload: {
@@ -135,7 +195,7 @@ export async function sendPushByToken(
       apns: {
         headers: {
           'apns-priority': '10',
-          'apns-expiration': String(Math.floor(Date.now() / 1000) + ttl),
+          'apns-expiration': apnsExpirationSeconds(ttl),
           ...(opts.collapseKey ? { 'apns-collapse-id': opts.collapseKey } : {}),
         },
         payload: {
@@ -162,6 +222,71 @@ export async function sendPushToUser(
 ) {
   const tokens = (user?.devices || []).map((d) => d.token).filter(Boolean);
   return sendPushToTokens(tokens, message, opts);
+}
+
+/**
+ * ✅ iOS-only: Convenience: send to user but ONLY iOS devices
+ */
+export async function sendIosPushToUser(
+  user: { devices?: Device[] },
+  payload: { title: string; body?: string },
+  opts: IosPushOptions = {},
+): Promise<{ success: boolean; sent: number; failed: number; response?: any; error?: any }> {
+  const devices = Array.isArray(user?.devices) ? user.devices : [];
+  const iosTokens = uniq(
+    devices
+      .filter((d) => (d?.os || '').toLowerCase() === OS.IOS)
+      .map((d) => d?.token)
+      .filter(Boolean),
+  );
+
+  if (!iosTokens.length) return { success: false, sent: 0, failed: 0, error: 'No iOS tokens found' };
+
+  try {
+    const ttl = opts.ttlSeconds ?? 60 * 60 * 24;
+
+    const response = await admin.messaging().sendEachForMulticast({
+      tokens: iosTokens,
+      notification: {
+        title: payload.title,
+        body: payload.body || '',
+      },
+      data: safeData(opts.data),
+      apns: {
+        headers: {
+          'apns-push-type': opts.contentAvailable ? 'background' : 'alert',
+          'apns-priority': opts.contentAvailable ? '5' : '10',
+          'apns-expiration': apnsExpirationSeconds(ttl),
+          ...(opts.collapseId ? { 'apns-collapse-id': opts.collapseId } : {}),
+        },
+        payload: {
+          aps: {
+            ...(opts.contentAvailable ? { 'content-available': 1 } : {}),
+            ...(opts.sound ? { sound: opts.sound } : { sound: 'default' }),
+            ...(typeof opts.badge === 'number' ? { badge: opts.badge } : {}),
+          },
+        },
+      },
+    });
+
+    // Log per-token failures
+    response.responses.forEach((r, idx) => {
+      if (!r.success) {
+        const code = (r.error as any)?.code;
+        console.error('❌ iOS FCM token failed:', iosTokens[idx], code, (r.error as any)?.message);
+      }
+    });
+
+    return {
+      success: response.failureCount === 0,
+      sent: response.successCount,
+      failed: response.failureCount,
+      response,
+    };
+  } catch (error: any) {
+    console.error('❌ iOS multicast error:', error?.message || error);
+    return { success: false, sent: 0, failed: iosTokens.length, error };
+  }
 }
 
 /**
@@ -214,7 +339,7 @@ export async function sendPushNotificationToUser(
       apns: {
         headers: {
           'apns-priority': '10',
-          'apns-expiration': String(Math.floor(Date.now() / 1000) + ttl),
+          'apns-expiration': apnsExpirationSeconds(ttl),
           ...(options.collapseKey ? { 'apns-collapse-id': options.collapseKey } : {}),
         },
         payload: {
