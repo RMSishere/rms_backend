@@ -44,7 +44,7 @@ const commonExcludeRoutes = [
   { path: `${GLOBAL_PREFIX}/auth/auto-verify-phone`, method: RequestMethod.POST },
   { path: `${GLOBAL_PREFIX}/auth/send-push-token`, method: RequestMethod.POST },
   { path: `${GLOBAL_PREFIX}/auth/send-ios-push-token`, method: RequestMethod.POST },
-  
+
   // { path: `${GLOBAL_PREFIX}/auth/wp-register`, method: RequestMethod.POST },
   { path: `${GLOBAL_PREFIX}/auth/wp-register`, method: RequestMethod.POST },
   { path: `${GLOBAL_PREFIX}/auth/wp-update`, method: RequestMethod.POST },

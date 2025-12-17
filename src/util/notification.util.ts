@@ -294,6 +294,14 @@ export async function sendIosPushToUser(
  * Send a FCM push notification to all devices of a user
  * Includes quiet-hours suppression + multicast delivery
  */
+/**
+ * ✅ Your existing API used across codebase:
+ * Send a FCM push notification to all devices of a user
+ * Includes quiet-hours suppression + multicast delivery
+ *
+ * ✅ UPDATED: sends correctly to BOTH iOS + Android (splits tokens by device.os)
+ * ✅ No changes needed anywhere else in the codebase.
+ */
 export async function sendPushNotificationToUser(
   user: any,
   payload: PushPayload,
@@ -301,9 +309,24 @@ export async function sendPushNotificationToUser(
 ): Promise<{ success: boolean; sent: number; failed: number }> {
   try {
     const devices = Array.isArray(user?.devices) ? user.devices : [];
-    const tokens = uniq(devices.map((d: any) => d?.token).filter(Boolean));
 
-    if (!tokens.length) return { success: false, sent: 0, failed: 0 };
+    // Keep tokens unique, and split by OS
+    const iosTokens = uniq(
+      devices
+        .filter((d: any) => (d?.os || '').toLowerCase() === OS.IOS)
+        .map((d: any) => d?.token)
+        .filter(Boolean),
+    );
+
+    const androidTokens = uniq(
+      devices
+        .filter((d: any) => (d?.os || '').toLowerCase() === OS.ANDROID)
+        .map((d: any) => d?.token)
+        .filter(Boolean),
+    );
+
+    const totalTokens = iosTokens.length + androidTokens.length;
+    if (!totalTokens) return { success: false, sent: 0, failed: 0 };
 
     // Generic skip condition
     if (options.skipIf) return { success: false, sent: 0, failed: 0 };
@@ -323,46 +346,71 @@ export async function sendPushNotificationToUser(
     const ttl = options.ttlSeconds ?? 60 * 60 * 24;
     const data = safeData(options.data ?? payload.data);
 
-    const res = await admin.messaging().sendEachForMulticast({
-      tokens,
-      notification: {
-        title: payload.title,
-        body: payload.body,
-      },
-      data,
-      android: {
-        priority: 'high',
-        ttl: ttl * 1000,
-        collapseKey: options.collapseKey,
-        notification: options.androidChannelId ? { channelId: options.androidChannelId } : undefined,
-      },
-      apns: {
-        headers: {
-          'apns-priority': '10',
-          'apns-expiration': apnsExpirationSeconds(ttl),
-          ...(options.collapseKey ? { 'apns-collapse-id': options.collapseKey } : {}),
-        },
-        payload: {
-          aps: { sound: 'default' },
-        },
-      },
-    });
+    let sent = 0;
+    let failed = 0;
 
-    // Optional logging of per-token failures
-    res.responses.forEach((r, idx) => {
-      if (!r.success) {
-        const code = (r.error as any)?.code;
-        console.error('❌ FCM token failed:', tokens[idx], code, (r.error as any)?.message);
-      }
-    });
+    // ✅ Send to Android devices (only)
+    if (androidTokens.length) {
+      const resAndroid = await admin.messaging().sendEachForMulticast({
+        tokens: androidTokens,
+        notification: { title: payload.title, body: payload.body },
+        data,
+        android: {
+          priority: 'high',
+          ttl: ttl * 1000,
+          collapseKey: options.collapseKey,
+          notification: options.androidChannelId ? { channelId: options.androidChannelId } : undefined,
+        },
+      });
+
+      sent += resAndroid.successCount;
+      failed += resAndroid.failureCount;
+
+      resAndroid.responses.forEach((r, idx) => {
+        if (!r.success) {
+          const code = (r.error as any)?.code;
+          console.error('❌ Android FCM token failed:', androidTokens[idx], code, (r.error as any)?.message);
+        }
+      });
+    }
+
+    // ✅ Send to iOS devices (only)
+    if (iosTokens.length) {
+      const resIos = await admin.messaging().sendEachForMulticast({
+        tokens: iosTokens,
+        notification: { title: payload.title, body: payload.body },
+        data,
+        apns: {
+          headers: {
+            // best practice for iOS
+            'apns-push-type': 'alert',
+            'apns-priority': '10',
+            'apns-expiration': apnsExpirationSeconds(ttl),
+            ...(options.collapseKey ? { 'apns-collapse-id': options.collapseKey } : {}),
+          },
+          payload: { aps: { sound: 'default' } },
+        },
+      });
+
+      sent += resIos.successCount;
+      failed += resIos.failureCount;
+
+      resIos.responses.forEach((r, idx) => {
+        if (!r.success) {
+          const code = (r.error as any)?.code;
+          console.error('❌ iOS FCM token failed:', iosTokens[idx], code, (r.error as any)?.message);
+        }
+      });
+    }
 
     return {
-      success: res.failureCount === 0,
-      sent: res.successCount,
-      failed: res.failureCount,
+      success: failed === 0,
+      sent,
+      failed,
     };
   } catch (err: any) {
     console.error('❌ Push Notification Error:', err?.message || err);
     return { success: false, sent: 0, failed: 1 };
   }
 }
+
