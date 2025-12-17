@@ -1235,10 +1235,10 @@ async verifyVerificationCode(
     console.log('📲 Welcome push devices:', freshUser.devices);
 
     // ✅ don’t spam
-    if (freshUser.welcomePushSent) {
-      console.log('⚠️ Welcome push already sent, skipping');
-      return;
-    }
+    // if (freshUser.welcomePushSent) {
+    //   console.log('⚠️ Welcome push already sent, skipping');
+    //   return;
+    // }
 
     try {
       const pushRes = await sendPushNotificationToUser(
