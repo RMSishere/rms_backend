@@ -9,11 +9,11 @@ import {
   HttpCode,
   Headers,
   BadRequestException,
-  Res,       // ✅ ADD THIS
+  Res,
   Query,
   InternalServerErrorException,
 } from '@nestjs/common';
-import { Response } from 'express';
+import { Response, Request } from 'express';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import {
@@ -28,13 +28,13 @@ import { RolesGuard } from 'src/common/guards/roles.guard';
 import Stripe from 'stripe';
 import { Types } from 'mongoose';
 import mongoose from 'mongoose';
+
 const stripe = new Stripe(
   'REMOVED_STRIPE_LIVE_KEY',
-  { apiVersion: '2025-08-27.basil' }   // ✅ Use Stripe's latest supported version
+  { apiVersion: '2025-08-27.basil' }
 );
 
-
-const STRIPE_WEBHOOK_SECRET = 'whsec_QcumBf3YBDiTzem2EsrBodKrhxTMDNLL'; // Set this from your Stripe dashboard
+const STRIPE_WEBHOOK_SECRET = 'whsec_QcumBf3YBDiTzem2EsrBodKrhxTMDNLL';
 
 interface Subscription {
   type: string;
@@ -52,13 +52,12 @@ interface Subscription {
 }
 
 interface User {
-  _id: Types.ObjectId | string; // MongoDB ObjectId
+  _id: Types.ObjectId | string;
   id?: any;
   email: string;
   role: number;
   subscription?: Subscription;
-  modifiedCount: number
-
+  modifiedCount: number;
 }
 
 @UseGuards(RolesGuard)
@@ -75,24 +74,39 @@ export class SubscriptionController {
   getAffiliatePlans() {
     return AFFILIATE_PLANS;
   }
+
   @Get('job-request-count')
   async getJobRequestCount(@Req() req) {
     const user = await this.userModel
       .findOne({ id: req.user.id })
       .select('subscription.jobRequestCountThisMonth')
       .lean();
-  
+
     return {
-      jobRequestCountThisMonth: user?.subscription?.jobRequestCountThisMonth || 0,
+      jobRequestCountThisMonth:
+        user?.subscription?.jobRequestCountThisMonth || 0,
     };
   }
+
   @Post('subscribe')
   async subscribe(@Req() req, @Body() body) {
-    const { plan, billingType: rawBillingType, userId: bodyUserId, subscriptionSource, subscriptionStatus } = body;
+    const {
+      plan,
+      billingType: rawBillingType,
+      userId: bodyUserId,
+      subscriptionSource,
+      subscriptionStatus,
+    } = body;
     let user = req.user;
-  
-    console.log('Subscribe called with:', { plan, billingType: rawBillingType, bodyUserId, subscriptionSource, subscriptionStatus });
-  
+
+    console.log('Subscribe called with:', {
+      plan,
+      billingType: rawBillingType,
+      bodyUserId,
+      subscriptionSource,
+      subscriptionStatus,
+    });
+
     try {
       if (!user && bodyUserId) {
         user = await this.userModel.findOne({ _id: bodyUserId });
@@ -101,42 +115,40 @@ export class SubscriptionController {
           throw new BadRequestException('User not found');
         }
       }
-  
+
       const billingType = rawBillingType?.toUpperCase();
       console.log('Normalized billingType:', billingType);
-  
+
       const isCustomer = user.role === USER_ROLES.CLIENT;
       console.log('User role:', user.role, 'Is customer:', isCustomer);
-  
+
       const planDetails = isCustomer
         ? getCustomerPlanDetails(plan)
         : getAffiliatePlanDetails(plan);
-  
+
       if (!planDetails) {
         console.error('Invalid plan:', plan);
         throw new BadRequestException('Invalid plan');
       }
-  
+
       // If subscriptionSource is apple/google, we skip Stripe flow and just update DB
       if (subscriptionSource === 'APPLE' || subscriptionSource === 'GOOGLE') {
-        // Use subscriptionStatus from request or default to INACTIVE
         const status = subscriptionStatus || 'INACTIVE';
-  
-        // Calculate expiry date for record-keeping (optional, adjust as needed)
+
         const expiresAt = new Date();
         if (billingType === 'MONTHLY') {
           expiresAt.setMonth(expiresAt.getMonth() + 1);
         } else if (billingType === 'YEARLY') {
           expiresAt.setFullYear(expiresAt.getFullYear() + 1);
         }
-  
+
         await this.userModel.updateOne(
           { _id: user._id },
           {
             $set: {
               subscription: {
-                subscriptionId: '', // or update with actual if available from mobile/webhook
-                customerId: '', // no Stripe customer
+                subscriptionId: '',
+                customerId: '',
                 type: plan,
                 billingType,
                 status,
@@ -151,34 +163,36 @@ export class SubscriptionController {
             },
           }
         );
-  
+
         console.log(`Subscription updated for Apple/Google user: ${user._id}`);
-  
+
         return {
           message: `Subscription status updated for ${subscriptionSource} subscription.`,
         };
       }
-  
-      // Original Stripe flow (unchanged)
+
       const priceId = planDetails.stripe?.[billingType];
       if (!priceId) {
-        console.error(`Stripe price ID missing for plan "${plan}" and billingType "${billingType}"`);
-        throw new BadRequestException('Stripe price ID not configured for this plan');
+        console.error(
+          `Stripe price ID missing for plan "${plan}" and billingType "${billingType}"`
+        );
+        throw new BadRequestException(
+          'Stripe price ID not configured for this plan'
+        );
       }
-  
-      // Create or reuse Stripe customer
+
       const customer = await stripe.customers.create({
         email: user.email,
         metadata: { userId: user.id.toString() },
       });
       console.log('Created Stripe customer:', customer.id);
-  
-      // Create Stripe Checkout session for subscription payment
+
       const session = await stripe.checkout.sessions.create({
         mode: 'subscription',
         customer: customer.id,
         line_items: [{ price: priceId, quantity: 1 }],
-        success_url: 'https://your-frontend-url.com/subscription-success?session_id={CHECKOUT_SESSION_ID}',
+        success_url:
+          'https://your-frontend-url.com/subscription-success?session_id={CHECKOUT_SESSION_ID}',
         cancel_url: 'https://your-frontend-url.com/subscription-cancelled',
         metadata: {
           userId: user.id.toString(),
@@ -186,20 +200,20 @@ export class SubscriptionController {
           billingType,
         },
       });
-  
+
       const expiresAt = new Date();
       if (billingType === 'MONTHLY') {
         expiresAt.setMonth(expiresAt.getMonth() + 1);
       } else if (billingType === 'YEARLY') {
         expiresAt.setFullYear(expiresAt.getFullYear() + 1);
       }
-  
+
       await this.userModel.updateOne(
         { _id: user._id },
         {
           $set: {
             subscription: {
-              subscriptionId: '', // Will update after webhook confirms subscription
+              subscriptionId: '',
               customerId: customer.id,
               type: plan,
               billingType,
@@ -215,157 +229,181 @@ export class SubscriptionController {
           },
         }
       );
-  
+
       console.log('User subscription updated in DB for user:', user._id);
-  
+
       return {
         checkoutUrl: session.url,
-        message: 'Checkout session created, complete payment to activate subscription.',
+        message:
+          'Checkout session created, complete payment to activate subscription.',
       };
     } catch (error) {
       console.error('Error in subscribe:', error);
       throw error;
     }
   }
-  
-  
-  
-  
-  
-  
-  
-
-  
 
   @Post('lead-purchase')
-  async leadPurchase(@Req() req, @Body() body: { amount: number; leadId: string; success_url: string; cancel_url: string }) {
+  async leadPurchase(
+    @Req() req,
+    @Body()
+    body: {
+      amount: number;
+      leadId: string;
+      success_url: string;
+      cancel_url: string;
+    }
+  ) {
     const user = req.user;
-  
+
     if (!body.amount || !body.leadId || !body.success_url || !body.cancel_url) {
       throw new BadRequestException('Missing required fields');
     }
-  
+
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       mode: 'payment',
-      success_url: 'https://runmysale.com/api/v1/subscription/payment-redirect?status=success',
-      cancel_url: 'https://runmysale.com/api/v1/subscription/payment-redirect?status=cancel',
+      success_url:
+        'https://runmysale.com/api/v1/subscription/payment-redirect?status=success',
+      cancel_url:
+        'https://runmysale.com/api/v1/subscription/payment-redirect?status=cancel',
       metadata: {
         userId: user.id.toString(),
         leadId: body.leadId,
         type: 'LEAD_PURCHASE',
       },
-      line_items: [{
-        price_data: {
-          currency: 'usd',
-          product_data: {
-            name: 'Lead Purchase',
+      line_items: [
+        {
+          price_data: {
+            currency: 'usd',
+            product_data: {
+              name: 'Lead Purchase',
+            },
+            unit_amount: Math.round(body.amount * 100),
           },
-          unit_amount: Math.round(body.amount * 100),
+          quantity: 1,
         },
-        quantity: 1,
-      }],
+      ],
     });
-  
+
     return {
-      session:session.id,
+      session: session.id,
       checkoutUrl: session.url,
       leadId: body.leadId,
     };
   }
+
   @Get('payment-redirect')
-async redirectToApp(@Res() res: Response, @Query('status') status: string) {
-  const deepLink = `runmysaleapp://payment?status=${status || 'unknown'}`;
-  const html = `
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <meta charset="utf-8" />
-        <title>Redirecting...</title>
-        <script>
-          window.location.href = '${deepLink}';
-        </script>
-      </head>
-      <body>
-        <p>Redirecting to app...</p>
-      </body>
-    </html>
-  `;
-  res.setHeader('Content-Type', 'text/html');
-  res.send(html);
-}
-@Get('lead-payment-status')
-async getLeadPaymentStatus(@Query('session_id') sessionId: string) {
-  if (!sessionId) {
-    throw new BadRequestException('Missing session_id query parameter');
+  async redirectToApp(
+    @Res() res: Response,
+    @Query('status') status: string
+  ) {
+    const deepLink = `runmysaleapp://payment?status=${status || 'unknown'}`;
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>Redirecting...</title>
+          <script>
+            window.location.href = '${deepLink}';
+          </script>
+        </head>
+        <body>
+          <p>Redirecting to app...</p>
+        </body>
+      </html>
+    `;
+    res.setHeader('Content-Type', 'text/html');
+    res.send(html);
   }
 
-  try {
-    const session = await stripe.checkout.sessions.retrieve(sessionId, {
-      expand: ['payment_intent'],
+  @Get('lead-payment-status')
+  async getLeadPaymentStatus(@Query('session_id') sessionId: string) {
+    if (!sessionId) {
+      throw new BadRequestException('Missing session_id query parameter');
+    }
+
+    try {
+      const session = await stripe.checkout.sessions.retrieve(sessionId, {
+        expand: ['payment_intent'],
+      });
+
+      const paymentIntent = session.payment_intent as Stripe.PaymentIntent;
+      const paymentStatus = paymentIntent?.status || 'unknown';
+
+      return {
+        sessionId,
+        leadId: session.metadata?.leadId || null,
+        userId: session.metadata?.userId || null,
+        paymentStatus,
+        amountTotal: session.amount_total / 100,
+        currency: session.currency,
+      };
+    } catch (error: any) {
+      console.error('Stripe session fetch error:', error.message);
+      throw new InternalServerErrorException('Failed to fetch payment status');
+    }
+  }
+
+  @Post('finalize-sale')
+  async finalizeSale(
+    @Req() req,
+    @Body()
+    body: {
+      profitAmount: number;
+      requestId: string;
+      success_url: string;
+      cancel_url: string;
+    }
+  ) {
+    const user = req.user;
+
+    if (!body.profitAmount || !body.requestId) {
+      throw new BadRequestException('Missing required fields');
+    }
+
+    const appFee = Math.round(body.profitAmount * 100);
+
+    if (appFee < 50) {
+      throw new BadRequestException(
+        'The amount is too low to process payment. Please increase your profit amount.'
+      );
+    }
+    console.log('app', appFee);
+
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      mode: 'payment',
+      success_url:
+        'https://runmysale.com/api/v1/subscription/payment-redirect?status=success',
+      cancel_url:
+        'https://runmysale.com/api/v1/subscription/payment-redirect?status=cancel',
+      metadata: {
+        userId: user.id.toString(),
+        requestId: body.requestId,
+        type: 'FINALIZE_SALE',
+      },
+      line_items: [
+        {
+          price_data: {
+            currency: 'usd',
+            product_data: {
+              name: 'Finalize Sale Fee (5% Profit)',
+            },
+            unit_amount: appFee,
+          },
+          quantity: 1,
+        },
+      ],
     });
 
-    const paymentIntent = session.payment_intent as Stripe.PaymentIntent;
-    const paymentStatus = paymentIntent?.status || 'unknown';
-
     return {
-      sessionId,
-      leadId: session.metadata?.leadId || null,
-      userId: session.metadata?.userId || null,
-      paymentStatus,
-      amountTotal: session.amount_total / 100,
-      currency: session.currency,
-    };
-  } catch (error) {
-    console.error('Stripe session fetch error:', error.message);
-    throw new InternalServerErrorException('Failed to fetch payment status');
-  }
-}
-
-@Post('finalize-sale')
-async finalizeSale(@Req() req, @Body() body: { profitAmount: number; requestId: string; success_url: string; cancel_url: string }) {
-  const user = req.user;
-
-  if (!body.profitAmount || !body.requestId) {
-    throw new BadRequestException('Missing required fields');
-  }
-
-  // Calculate 5% of the profit
-  const appFee = Math.round(body.profitAmount * 100); // convert to cents
-
-  if (appFee < 50) {
-    throw new BadRequestException('The amount is too low to process payment. Please increase your profit amount.');
-  }
-console.log("app",appFee);
-  const session = await stripe.checkout.sessions.create({
-    payment_method_types: ['card'],
-    mode: 'payment',
-    success_url: 'https://runmysale.com/api/v1/subscription/payment-redirect?status=success',
-    cancel_url: 'https://runmysale.com/api/v1/subscription/payment-redirect?status=cancel',
-    metadata: {
-      userId: user.id.toString(),
+      session: session.id,
+      checkoutUrl: session.url,
       requestId: body.requestId,
-      type: 'FINALIZE_SALE',
-    },
-    line_items: [{
-      price_data: {
-        currency: 'usd',
-        product_data: {
-          name: 'Finalize Sale Fee (5% Profit)',
-        },
-        unit_amount: appFee,
-      },
-      quantity: 1,
-    }],
-  });
-
-  return {
-    session: session.id,
-    checkoutUrl: session.url,
-    requestId: body.requestId,
-  };
-}
-
+    };
+  }
 
   @Put('change-plan')
   async changePlan(@Req() req, @Body() body) {
@@ -425,112 +463,110 @@ console.log("app",appFee);
     return { success: true };
   }
 
- @Get('status')
-async getStatus(@Req() req) {
-  const user = await this.userModel
-    .findOne({ id: req.user.id })
-    .select('subscription')
-    .lean();
+  @Get('status')
+  async getStatus(@Req() req) {
+    const user = await this.userModel
+      .findOne({ id: req.user.id })
+      .select('subscription')
+      .lean();
 
-  if (!user?.subscription) {
-    return {};
-  }
-
-  const subscription = user.subscription;
-  let planName: string | null = null;
-
-  // If there's a valid Stripe subscriptionId, fetch its details
-  if (subscription.subscriptionId) {
-    try {
-      const stripeSub = await stripe.subscriptions.retrieve(
-        subscription.subscriptionId,
-        { expand: ['items.data.price.product'] },
-      );
-
-      planName =
-        (stripeSub.items.data[0]?.price?.product as Stripe.Product)?.name || null;
-    } catch (err: any) {
-      console.error('Failed to fetch subscription from Stripe:', err?.message || err);
+    if (!user?.subscription) {
+      return {};
     }
+
+    const subscription = user.subscription;
+    let planName: string | null = null;
+
+    if (subscription.subscriptionId) {
+      try {
+        const stripeSub = await stripe.subscriptions.retrieve(
+          subscription.subscriptionId,
+          { expand: ['items.data.price.product'] }
+        );
+
+        planName =
+          (stripeSub.items.data[0]?.price?.product as Stripe.Product)?.name ||
+          null;
+      } catch (err: any) {
+        console.error(
+          'Failed to fetch subscription from Stripe:',
+          err?.message || err
+        );
+      }
+    }
+
+    const now = Date.now();
+    const expMs = subscription.expiresAt
+      ? new Date(subscription.expiresAt).getTime()
+      : NaN;
+    const isExpired = Number.isFinite(expMs) && expMs < now;
+
+    const effectiveStatus = isExpired
+      ? 'INACTIVE'
+      : (subscription.status ?? 'INACTIVE');
+
+    return {
+      type: subscription.type,
+      billingType: subscription.billingType,
+      status: effectiveStatus,
+      startedAt: subscription.startedAt,
+      expiresAt: subscription.expiresAt,
+      jobRequestCountThisMonth: subscription.jobRequestCountThisMonth,
+      pricingRequestsUsed: subscription.pricingRequestsUsed,
+      customVideosUsed: subscription.customVideosUsed,
+      pitchReviewsUsed: subscription.pitchReviewsUsed,
+      subscriptionId: subscription.subscriptionId,
+      planName,
+    };
   }
 
-  // --- NEW: compute effective status based on expiry ---
-  const now = Date.now();
-  const expMs = subscription.expiresAt ? new Date(subscription.expiresAt).getTime() : NaN;
-  const isExpired = Number.isFinite(expMs) && expMs < now;
+  @Put('use-job-credit')
+  async useCredit(@Req() req) {
+    const user = req.user;
+    console.log(user, 'usererererererer');
 
-  const effectiveStatus =
-    isExpired ? 'INACTIVE' : (subscription.status ?? 'INACTIVE');
+    const userdata = await this.userModel.findById(user._id);
+    console.log(userdata, '/userererer');
 
-  return {
-    type: subscription.type,
-    billingType: subscription.billingType,
-    status: effectiveStatus,                   // <- override if expired
-    startedAt: subscription.startedAt,
-    expiresAt: subscription.expiresAt,
-    jobRequestCountThisMonth: subscription.jobRequestCountThisMonth,
-    pricingRequestsUsed: subscription.pricingRequestsUsed,
-    customVideosUsed: subscription.customVideosUsed,
-    pitchReviewsUsed: subscription.pitchReviewsUsed,
-    subscriptionId: subscription.subscriptionId,
-    planName,
-  };
-}
+    const plan = getCustomerPlanDetails(userdata.subscription?.type);
+    console.log(plan, 'userplan');
 
-  
+    if (!userdata.subscription || !plan) {
+      return { error: 'No active plan' };
+    }
 
-  // @Put('use-job-credit')
-@Put('use-job-credit')
-async useCredit(@Req() req) {
-  const user = req.user;
-  console.log(user, 'usererererererer');
+    const jobRequestCount = userdata.subscription.jobRequestCountThisMonth || 0;
+    if (jobRequestCount >= plan.jobRequestLimit) {
+      return { error: 'Job request limit exceeded for this month' };
+    }
 
-  const userdata = await this.userModel.findById(user._id);
-  console.log(userdata, '/userererer');
+    const newCount = jobRequestCount + 1;
+    await this.userModel.updateOne(
+      { _id: user._id },
+      { $set: { 'subscription.jobRequestCountThisMonth': newCount } }
+    );
 
-  const plan = getCustomerPlanDetails(userdata.subscription?.type);
-  console.log(plan, 'userplan');
-
-  if (!userdata.subscription || !plan) {
-    return { error: 'No active plan' };
+    return { success: true };
   }
 
-  // Check the current count of job requests for this month
-  const jobRequestCount = userdata.subscription.jobRequestCountThisMonth || 0;
-  if (jobRequestCount >= plan.jobRequestLimit) {
-    return { error: 'Job request limit exceeded for this month' };
+  @Get('eligibility-check')
+  async checkEligibility(
+    @Req() req,
+    @Body('type') jobType: 'SELL' | 'REMOVE' | 'OTHER'
+  ) {
+    const user = req.user;
+
+    const plan = getCustomerPlanDetails(user.subscription?.type);
+    let canPost = false;
+
+    if (jobType === 'SELL' || jobType === 'REMOVE') {
+      canPost = canPostJob(req.user, jobType);
+    } else {
+      canPost = plan?.allowExtraServices || false;
+    }
+
+    return { canPost };
   }
-
-  // Increment job request count for the user
-  const newCount = jobRequestCount + 1;
-  await this.userModel.updateOne(
-    { _id: user._id }, // ✅ Fixed line
-    { $set: { 'subscription.jobRequestCountThisMonth': newCount } }
-  );
-
-  return { success: true };
-}
-
-
-
-@Get('eligibility-check')
-async checkEligibility(@Req() req, @Body('type') jobType: 'SELL' | 'REMOVE' | 'OTHER') {
-  const user = req.user;
-
-  // Get the customer's subscription plan details
-  const plan = getCustomerPlanDetails(user.subscription?.type);
-  let canPost = false;
-
-  // Check if the plan allows posting the requested job type
-  if (jobType === 'SELL' || jobType === 'REMOVE') {
-    canPost = canPostJob(req.user, jobType);
-  } else {
-    canPost = plan?.allowExtraServices || false;
-  }
-
-  return { canPost };
-}
-
 
   @Put('reset-monthly-limits')
   @Roles(USER_ROLES.ADMIN)
@@ -550,143 +586,165 @@ async checkEligibility(@Req() req, @Body('type') jobType: 'SELL' | 'REMOVE' | 'O
 
     return { success: true };
   }
+
   @Put('update-subscription-id')
   async updateSubscriptionId(
     @Body() body: { userId: string; subscriptionId: string; customerId?: string }
   ) {
     const { userId, subscriptionId, customerId } = body;
-  
+
     if (!userId || !subscriptionId) {
       throw new BadRequestException('userId and subscriptionId are required');
     }
-  
+
     const updateData: any = {
       'subscription.subscriptionId': subscriptionId,
     };
-  
+
     if (customerId) {
       updateData['subscription.customerId'] = customerId;
     }
-  
+
     const result = await this.userModel.updateOne(
       { _id: new mongoose.Types.ObjectId(userId) },
       { $set: updateData }
     );
-  
-    const modifiedCount = (result as any).modifiedCount ?? (result as any).nModified ?? 0;
+
+    const modifiedCount =
+      (result as any).modifiedCount ?? (result as any).nModified ?? 0;
     if (modifiedCount === 0) {
       throw new InternalServerErrorException('Failed to update subscription');
     }
-  
+
     return { success: true, message: 'Subscription updated successfully' };
   }
-  
-  
+
+  // ✅✅✅ STRIPE + REVENUECAT WEBHOOK (FIXED)
   @HttpCode(200)
   @Post('webhook')
-  async webhookHandler(@Body() body: any, @Headers('stripe-signature') sig: string, @Headers() headers) {
-    // First, try to detect if this is a Stripe webhook by checking stripe-signature header
+  @UseGuards() // ✅ overrides controller-level RolesGuard for this route only
+  async webhookHandler(
+    @Req() req: Request & { rawBody: Buffer },  // ✅ rawBody available if enabled in main.ts
+    @Res() res: Response,
+    @Headers('stripe-signature') sig: string
+  ) {
+    // Stripe webhook
     if (sig) {
       let event: Stripe.Event;
       try {
-        event = stripe.webhooks.constructEvent(body, sig, STRIPE_WEBHOOK_SECRET);
-      } catch (err) {
+        // ✅ IMPORTANT: use raw body buffer, NOT parsed JSON body
+        event = stripe.webhooks.constructEvent(
+          req.rawBody,
+          sig,
+          STRIPE_WEBHOOK_SECRET
+        );
+      } catch (err: any) {
         console.error('❌ Invalid Stripe webhook:', err.message);
-        throw new BadRequestException('Invalid Stripe webhook');
+        return res.status(400).send('Invalid Stripe webhook');
       }
-  
-      const dataObject = event.data.object as any;
-  
-      switch(event.type) {
-        case 'invoice.payment_succeeded': {
-          const subscriptionId = dataObject.subscription;
-          await this.userModel.updateOne(
-            { 'subscription.subscriptionId': subscriptionId },
-            {
-              $set: {
-                'subscription.status': 'ACTIVE',
-                'subscription.startedAt': new Date(),
-                'subscription.expiresAt': new Date(new Date().setMonth(new Date().getMonth() + 1)),
-              },
-            }
-          );
-          break;
-        }
-        case 'invoice.payment_failed': {
-          const subscriptionId = dataObject.subscription;
-          await this.userModel.updateOne(
-            { 'subscription.subscriptionId': subscriptionId },
-            {
-              $set: {
-                'subscription.status': 'INACTIVE',
-              },
-            }
-          );
-          break;
-        }
-        case 'customer.subscription.deleted': {
-          const subscriptionId = dataObject.id;
-          await this.userModel.updateOne(
-            { 'subscription.subscriptionId': subscriptionId },
-            {
-              $set: {
-                'subscription.status': 'CANCELED',
-                'subscription.expiresAt': new Date(),
-              },
-            }
-          );
-          break;
-        }
-        case 'checkout.session.completed': {
-          const session = dataObject;
-          const subscriptionId = session.subscription;
-          const userId = session.metadata?.userId;
-  
-          if (userId && subscriptionId) {
+
+      // ✅ ACK Stripe immediately (prevents retries)
+      res.status(200).json({ received: true });
+
+      try {
+        const dataObject = event.data.object as any;
+
+        switch (event.type) {
+          case 'invoice.payment_succeeded': {
+            const subscriptionId = dataObject.subscription;
             await this.userModel.updateOne(
-              { id: userId },
+              { 'subscription.subscriptionId': subscriptionId },
               {
                 $set: {
-                  'subscription.subscriptionId': subscriptionId,
+                  'subscription.status': 'ACTIVE',
+                  'subscription.startedAt': new Date(),
+                  'subscription.expiresAt': new Date(
+                    new Date().setMonth(new Date().getMonth() + 1)
+                  ),
                 },
               }
             );
+            break;
           }
-          break;
+
+          case 'invoice.payment_failed': {
+            const subscriptionId = dataObject.subscription;
+            await this.userModel.updateOne(
+              { 'subscription.subscriptionId': subscriptionId },
+              {
+                $set: {
+                  'subscription.status': 'INACTIVE',
+                },
+              }
+            );
+            break;
+          }
+
+          case 'customer.subscription.deleted': {
+            const subscriptionId = dataObject.id;
+            await this.userModel.updateOne(
+              { 'subscription.subscriptionId': subscriptionId },
+              {
+                $set: {
+                  'subscription.status': 'CANCELED',
+                  'subscription.expiresAt': new Date(),
+                },
+              }
+            );
+            break;
+          }
+
+          case 'checkout.session.completed': {
+            const session = dataObject;
+            const subscriptionId = session.subscription;
+            const userId = session.metadata?.userId;
+
+            if (userId && subscriptionId) {
+              await this.userModel.updateOne(
+                { id: userId },
+                {
+                  $set: {
+                    'subscription.subscriptionId': subscriptionId,
+                  },
+                }
+              );
+            }
+            break;
+          }
+
+          // Add other Stripe events if needed
         }
-        // Add other Stripe events if needed
+      } catch (e) {
+        console.error('❌ Stripe webhook handler error:', e);
       }
-  
-      return { received: true };
+
+      // response already sent
+      return;
     }
-  
-    // If not Stripe webhook, assume it's RevenueCat webhook for Apple/Google subscriptions
-    // RevenueCat sends standard JSON with an event field
+
+    // RevenueCat webhook (Apple/Google)
+    const body: any = (req as any).body;
+
     const event = body;
-  
-    // Parse needed fields
     const eventType = event.event;
-    const userId = event.app_user_id; // RevenueCat user identifier, map to your DB user
+    const userId = event.app_user_id;
     const productId = event.product_id;
     const purchaseDate = event.purchase_date ? new Date(event.purchase_date) : null;
     const expiresDate = event.expires_date ? new Date(event.expires_date) : null;
-    const subscriptionStatus = event.subscriber?.subscriptions?.[productId]?.status || null;
-  
+    const subscriptionStatus =
+      event.subscriber?.subscriptions?.[productId]?.status || null;
+
     if (!userId) {
       console.error('RevenueCat webhook missing app_user_id');
-      return { received: true };
+      return res.status(200).json({ received: true });
     }
-  
-    // Map RevenueCat userId to your DB user _id or unique id field
-    // Assuming userId maps to a field in your DB, adjust as needed
+
     const user = await this.userModel.findOne({ id: userId });
     if (!user) {
       console.error('User not found for RevenueCat userId:', userId);
-      return { received: true };
+      return res.status(200).json({ received: true });
     }
-  
-    // Determine subscription status mapping (RevenueCat statuses can be active, expired, canceled, etc.)
-    // Map RevenueCat statuses to your subscription.status values (e.g., ACTIVE, INACTIVE, CANCELED)
+
     let mappedStatus = 'INACTIVE';
     if (subscriptionStatus === 'active' || subscriptionStatus === 'trialing') {
       mappedStatus = 'ACTIVE';
@@ -695,8 +753,7 @@ async checkEligibility(@Req() req, @Body('type') jobType: 'SELL' | 'REMOVE' | 'O
     } else if (subscriptionStatus === 'canceled') {
       mappedStatus = 'CANCELED';
     }
-  
-    // Update user subscription in DB
+
     await this.userModel.updateOne(
       { _id: user._id },
       {
@@ -708,8 +765,7 @@ async checkEligibility(@Req() req, @Body('type') jobType: 'SELL' | 'REMOVE' | 'O
         },
       }
     );
-  
-    return { received: true };
+
+    return res.status(200).json({ received: true });
   }
-  
 }
