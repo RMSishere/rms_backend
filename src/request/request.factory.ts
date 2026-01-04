@@ -64,34 +64,84 @@ constructor(
 
 async createRequest(data: Request, user: User): Promise<Request> {
   try {
+    // --------------------------------------------
+    // ✅ 1) Basic validation (client-side mistakes)
+    // --------------------------------------------
+    const rawZip = String((data as any)?.zip ?? '').trim();
+
+    if (!rawZip) {
+      throw new BadRequestException('Zip code is required.');
+    }
+
+    // If your system is US-only, enforce 5-digit ZIP.
+    // If you support ZIP+4, adjust this to allow /^\d{5}(-\d{4})?$/
+    const isValidZip = /^\d{5}$/.test(rawZip);
+    if (!isValidZip) {
+      throw new BadRequestException('Invalid zip code. Please provide a 5-digit zip code.');
+    }
+
+    // normalize
+    (data as any).zip = rawZip;
+
+    // --------------------------------------------
+    // ✅ 2) Validate zip is supported (prevents 500)
+    // --------------------------------------------
+    const zipInfo = await this.zipCodeFactory.getZipCode(rawZip);
+    if (!zipInfo) {
+      // This is the key fix: invalid/out-of-range zip becomes 400
+      throw new BadRequestException(
+        `We currently do not support this zip code (${rawZip}). Please use a supported service area zip.`,
+      );
+    }
+
+    // --------------------------------------------
+    // ✅ 3) Validate user + subscription
+    // --------------------------------------------
+    const userdata = await this.userModel.findById(user._id);
+    if (!userdata) {
+      throw new BadRequestException('User not found.');
+    }
+
+    const plan = getCustomerPlanDetails(userdata.subscription?.type);
+    if (!plan) {
+      throw new BadRequestException('Unable to determine your subscription plan.');
+    }
+
+    if ((userdata.subscription?.jobRequestCountThisMonth ?? 0) >= plan.jobRequestLimit) {
+      throw new BadRequestException('Job request limit exceeded for this month.');
+    }
+
+    // --------------------------------------------
+    // ✅ 4) Build request
+    // --------------------------------------------
     data.id = await this.generateSequentialId('request');
     data.requesterOwner = user;
     data.createdBy = this.getCreatedBy(user);
 
-    const userdata = await this.userModel.findById(user._id);
-    const plan = getCustomerPlanDetails(userdata.subscription?.type);
-
-    if (userdata.subscription.jobRequestCountThisMonth >= plan.jobRequestLimit) {
-      throw new BadRequestException('Job request limit exceeded for this month');
-    }
-
     const affiliates: User[] = await this.userFactory.getApprovedAffiliates({
-      'businessProfile.nearByZipCodes': data.zip,
+      'businessProfile.nearByZipCodes': rawZip,
     });
 
     const admin = await this.userFactory.getAdmin();
-    data.price = await this.findRequestPrice(data.zip, affiliates.length);
+
+    // If findRequestPrice can return undefined, guard it
+    const computedPrice = await this.findRequestPrice(rawZip, affiliates.length);
+    if (computedPrice === undefined || computedPrice === null) {
+      throw new BadRequestException(
+        `Pricing is not configured for zip code (${rawZip}). Please contact support.`,
+      );
+    }
+    data.price = computedPrice;
 
     const newRequest = new this.requestModel(data);
     const res = await newRequest.save();
     const request = new RequestDto(res);
 
-    // ----------------------------------------------------
-    // 🟩 GHL: Move Customer → ACTIVE_JOB
-    // ----------------------------------------------------
+    // --------------------------------------------
+    // 🟩 GHL: Move Customer → ACTIVE_JOB (non-blocking)
+    // --------------------------------------------
     try {
       if (user.role === USER_ROLES.CLIENT && userdata?.ghlCustomerOpportunityId) {
-        // ✅ Use local injected ghlService (safer than userFactory.ghlService)
         await this.ghlService.moveStage(
           userdata.ghlCustomerOpportunityId,
           GHL_STAGES.CUSTOMERS.ACTIVE_JOB,
@@ -101,49 +151,29 @@ async createRequest(data: Request, user: User): Promise<Request> {
       console.error('⚠️ GHL ACTIVE_JOB Error:', err?.message || err);
     }
 
-    // -------------------------------
-    // NOTIFICATIONS TO AFFILIATES & ADMIN
-    // -------------------------------
-    if (request && affiliates && affiliates.length) {
+    // --------------------------------------------
+    // ✅ Notifications (non-blocking)
+    // --------------------------------------------
+    if (request && affiliates?.length) {
       let requestLabel = '';
-
-      if (SERVICES[request.requestType] && SERVICES[request.requestType].label) {
-        requestLabel = SERVICES[request.requestType].label;
-      }
+      if (SERVICES[request.requestType]?.label) requestLabel = SERVICES[request.requestType].label;
 
       const title = `New Service Request - ${requestLabel}`;
       const description = "Congrats! You've got a new service request in your area.";
       const adminDescription = `Congrats! There is a new service request in zip code ${request.zip}.`;
 
-      // ✅ Affiliate notifications (inApp + text + email as you already had)
       this.notificationfactory
         .sendNotification(affiliates, NOTIFICATION_TYPES.NEW_JOB, {
-          inApp: {
-            message: { requestId: request.id, title, description },
-          },
-          text: {
-            message: `${title}\n${description}`,
-          },
-          email: {
-            template: MAIL_TEMPLATES.NEW_REQUEST,
-            locals: { title, description },
-          },
+          inApp: { message: { requestId: request.id, title, description } },
+          text: { message: `${title}\n${description}` },
+          email: { template: MAIL_TEMPLATES.NEW_REQUEST, locals: { title, description } },
         })
         .catch(() => null);
 
-      // ✅ Admin notifications (keeps your existing payload)
       this.notificationfactory
         .sendNotification(admin, NOTIFICATION_TYPES.NEW_JOB, {
-          inApp: {
-            message: {
-              requestId: request.id,
-              title,
-              description: adminDescription,
-            },
-          },
-          text: {
-            message: `${title}\n${adminDescription}`,
-          },
+          inApp: { message: { requestId: request.id, title, description: adminDescription } },
+          text: { message: `${title}\n${adminDescription}` },
           email: {
             template: MAIL_TEMPLATES.NEW_REQUEST,
             locals: { title, description: adminDescription },
@@ -152,28 +182,24 @@ async createRequest(data: Request, user: User): Promise<Request> {
         .catch(() => null);
     }
 
-    // ----------------------------------------------------
-    // 🟩 TAGGING - ADD APPROPRIATE TAGS
-    // ----------------------------------------------------
-    const customerTags = ['customer-new', 'approved', 'background_check_passed'];
-    const affiliateTags = ['affiliate_active', 'affiliate_approved'];
-
-    // Adding tags to the request (customer)
+    // --------------------------------------------
+    // ✅ Tagging (non-blocking)
+    // --------------------------------------------
     try {
-      if (customerTags.length && user?.ghlContactId) {
-        await this.ghlService.addTag(user.ghlContactId, customerTags[0]); // keep "one tag for now"
+      const customerTags = ['customer-new', 'approved', 'background_check_passed'];
+      if (user?.ghlContactId && customerTags.length) {
+        await this.ghlService.addTag(user.ghlContactId, customerTags[0]); // keeping "one tag for now"
       }
     } catch (err: any) {
       console.error('⚠️ GHL Customer Tag add error:', err?.message || err);
     }
 
-    // Adding tags to affiliates (if applicable)
     try {
-      if (affiliates.length) {
+      const affiliateTags = ['affiliate_active', 'affiliate_approved'];
+      if (affiliates?.length) {
         for (const affiliate of affiliates) {
-          const affiliateCustomerTags = affiliateTags;
-          if (affiliateCustomerTags.length && affiliate?.ghlContactId) {
-            await this.ghlService.addTag(affiliate.ghlContactId, affiliateCustomerTags[0]); // keep "one tag for now"
+          if (affiliate?.ghlContactId) {
+            await this.ghlService.addTag(affiliate.ghlContactId, affiliateTags[0]); // one tag
           }
         }
       }
@@ -182,14 +208,33 @@ async createRequest(data: Request, user: User): Promise<Request> {
     }
 
     return request;
-  } catch (err) {
-    throw err;
+  } catch (err: any) {
+    // --------------------------------------------
+    // ✅ Return proper HTTP errors instead of 500
+    // --------------------------------------------
+    if (
+      err instanceof BadRequestException ||
+      err instanceof ForbiddenException
+    ) {
+      throw err;
+    }
+
+    // Mongoose validation errors => 400
+    if (err?.name === 'ValidationError') {
+      throw new BadRequestException(err?.message || 'Validation failed.');
+    }
+
+    // CastError (invalid ObjectId etc.) => 400
+    if (err?.name === 'CastError') {
+      throw new BadRequestException('Invalid data provided.');
+    }
+
+    console.error('🔥 createRequest unexpected error:', err?.message || err);
+    throw new InternalServerErrorException(
+      'Failed to create request. Please try again or contact support.',
+    );
   }
 }
-
-
-
-
 
 
 async getAllRequests(params: any, user: User): Promise<PaginatedData> {
