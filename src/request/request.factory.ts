@@ -62,10 +62,10 @@ constructor(
   process.env.TWILIO_AUTH_TOKEN,
 );
 
-async createRequest(data: Request, user: User): Promise<Request> {
+async createRequest(data: Request, user: User): Promise<any> {
   try {
     // --------------------------------------------
-    // ✅ 1) Basic validation (client-side mistakes)
+    // ✅ 1) Basic validation
     // --------------------------------------------
     const rawZip = String((data as any)?.zip ?? '').trim();
 
@@ -73,24 +73,23 @@ async createRequest(data: Request, user: User): Promise<Request> {
       throw new BadRequestException('Zip code is required.');
     }
 
-    // If your system is US-only, enforce 5-digit ZIP.
-    // If you support ZIP+4, adjust this to allow /^\d{5}(-\d{4})?$/
+    // US ZIP only (5 digits)
     const isValidZip = /^\d{5}$/.test(rawZip);
     if (!isValidZip) {
+      // This also blocks PK style zip early because it's not 5 digits
       throw new BadRequestException('Invalid zip code. Please provide a 5-digit zip code.');
     }
 
-    // normalize
     (data as any).zip = rawZip;
 
     // --------------------------------------------
-    // ✅ 2) Validate zip is supported (prevents 500)
+    // ✅ 2) CASE #3: Stop if ZIP is NOT a real US ZIP
+    // (NO schema change) - uses external validation
     // --------------------------------------------
-    const zipInfo = await this.zipCodeFactory.getZipCode(rawZip);
-    if (!zipInfo) {
-      // This is the key fix: invalid/out-of-range zip becomes 400
+    const isUS = await this.zipCodeFactory.isUSZip(rawZip);
+    if (!isUS) {
       throw new BadRequestException(
-        `We currently do not support this zip code (${rawZip}). Please use a supported service area zip.`,
+        'Thank you for submitting your request, but we currently only serve the United States. We do hope to serve your area in the future.',
       );
     }
 
@@ -118,21 +117,39 @@ async createRequest(data: Request, user: User): Promise<Request> {
     data.requesterOwner = user;
     data.createdBy = this.getCreatedBy(user);
 
+    const admin = await this.userFactory.getAdmin();
+
+    // --------------------------------------------
+    // ✅ 5) CASE #1 / #2: Affiliate coverage check
+    // zipInfo is ONLY for affiliate/service-area record (not US validation)
+    // --------------------------------------------
+    const zipInfo = await this.zipCodeFactory.getZipCode(rawZip);
+
     const affiliates: User[] = await this.userFactory.getApprovedAffiliates({
       'businessProfile.nearByZipCodes': rawZip,
     });
 
-    const admin = await this.userFactory.getAdmin();
+    // Case #2 if there is no service-area zip record OR no affiliates returned
+    const isOutOfAffiliateArea = !zipInfo || (affiliates?.length ?? 0) === 0;
 
-    // If findRequestPrice can return undefined, guard it
+    // --------------------------------------------
+    // ✅ 6) Pricing (must NEVER break case #2)
+    // Your findRequestPrice now always returns a number (fallback)
+    // --------------------------------------------
     const computedPrice = await this.findRequestPrice(rawZip, affiliates.length);
+
     if (computedPrice === undefined || computedPrice === null) {
+      // should never happen with updated findRequestPrice
       throw new BadRequestException(
         `Pricing is not configured for zip code (${rawZip}). Please contact support.`,
       );
     }
-    data.price = computedPrice;
 
+    (data as any).price = computedPrice;
+
+    // --------------------------------------------
+    // ✅ 7) Save
+    // --------------------------------------------
     const newRequest = new this.requestModel(data);
     const res = await newRequest.save();
     const request = new RequestDto(res);
@@ -153,23 +170,30 @@ async createRequest(data: Request, user: User): Promise<Request> {
 
     // --------------------------------------------
     // ✅ Notifications (non-blocking)
+    // Case #1: affiliates + admin
+    // Case #2: admin only
     // --------------------------------------------
-    if (request && affiliates?.length) {
+    try {
       let requestLabel = '';
-      if (SERVICES[request.requestType]?.label) requestLabel = SERVICES[request.requestType].label;
+      if (SERVICES[request.requestType]?.label) {
+        requestLabel = SERVICES[request.requestType].label;
+      }
 
       const title = `New Service Request - ${requestLabel}`;
       const description = "Congrats! You've got a new service request in your area.";
       const adminDescription = `Congrats! There is a new service request in zip code ${request.zip}.`;
 
-      this.notificationfactory
-        .sendNotification(affiliates, NOTIFICATION_TYPES.NEW_JOB, {
-          inApp: { message: { requestId: request.id, title, description } },
-          text: { message: `${title}\n${description}` },
-          email: { template: MAIL_TEMPLATES.NEW_REQUEST, locals: { title, description } },
-        })
-        .catch(() => null);
+      if (affiliates?.length) {
+        this.notificationfactory
+          .sendNotification(affiliates, NOTIFICATION_TYPES.NEW_JOB, {
+            inApp: { message: { requestId: request.id, title, description } },
+            text: { message: `${title}\n${description}` },
+            email: { template: MAIL_TEMPLATES.NEW_REQUEST, locals: { title, description } },
+          })
+          .catch(() => null);
+      }
 
+      // Always notify admin
       this.notificationfactory
         .sendNotification(admin, NOTIFICATION_TYPES.NEW_JOB, {
           inApp: { message: { requestId: request.id, title, description: adminDescription } },
@@ -180,6 +204,8 @@ async createRequest(data: Request, user: User): Promise<Request> {
           },
         })
         .catch(() => null);
+    } catch (err: any) {
+      console.error('⚠️ Notification Error:', err?.message || err);
     }
 
     // --------------------------------------------
@@ -188,7 +214,7 @@ async createRequest(data: Request, user: User): Promise<Request> {
     try {
       const customerTags = ['customer-new', 'approved', 'background_check_passed'];
       if (user?.ghlContactId && customerTags.length) {
-        await this.ghlService.addTag(user.ghlContactId, customerTags[0]); // keeping "one tag for now"
+        await this.ghlService.addTag(user.ghlContactId, customerTags[0]);
       }
     } catch (err: any) {
       console.error('⚠️ GHL Customer Tag add error:', err?.message || err);
@@ -199,7 +225,7 @@ async createRequest(data: Request, user: User): Promise<Request> {
       if (affiliates?.length) {
         for (const affiliate of affiliates) {
           if (affiliate?.ghlContactId) {
-            await this.ghlService.addTag(affiliate.ghlContactId, affiliateTags[0]); // one tag
+            await this.ghlService.addTag(affiliate.ghlContactId, affiliateTags[0]);
           }
         }
       }
@@ -207,24 +233,31 @@ async createRequest(data: Request, user: User): Promise<Request> {
       console.error('⚠️ GHL Affiliate Tag add error:', err?.message || err);
     }
 
-    return request;
+    // --------------------------------------------
+    // ✅ Final response (adds meta for frontend)
+    // Case #2: frontend should show warning & allow continue
+    // --------------------------------------------
+    return {
+      ...request,
+      meta: {
+        isOutOfAffiliateArea,
+        warning: isOutOfAffiliateArea
+          ? "Thank you! We currently don't have affiliates in your area yet, but you can still submit the request."
+          : null,
+      },
+    };
   } catch (err: any) {
     // --------------------------------------------
     // ✅ Return proper HTTP errors instead of 500
     // --------------------------------------------
-    if (
-      err instanceof BadRequestException ||
-      err instanceof ForbiddenException
-    ) {
+    if (err instanceof BadRequestException || err instanceof ForbiddenException) {
       throw err;
     }
 
-    // Mongoose validation errors => 400
     if (err?.name === 'ValidationError') {
       throw new BadRequestException(err?.message || 'Validation failed.');
     }
 
-    // CastError (invalid ObjectId etc.) => 400
     if (err?.name === 'CastError') {
       throw new BadRequestException('Invalid data provided.');
     }
@@ -235,6 +268,7 @@ async createRequest(data: Request, user: User): Promise<Request> {
     );
   }
 }
+
 
 
 async getAllRequests(params: any, user: User): Promise<PaginatedData> {
@@ -1187,23 +1221,36 @@ async closeJob(id: string, user: User): Promise<Request> {
 
 
 
-  async findRequestPrice(zip: string, count: number): Promise<number> {
-    let leadCalculations = [];
-    const zipCodeData = await this.zipCodeFactory.getZipCode(zip);
+ async findRequestPrice(zip: string, count: number): Promise<number> {
+  let leadCalculations = [];
 
-    if (zipCodeData && zipCodeData.leadCalculations) {
-      leadCalculations = zipCodeData.leadCalculations;
-    } else {
-      leadCalculations = defaultLeadCalculations;
-    }
+  // If zip exists in DB, use its leadCalculations
+  const zipCodeData = await this.zipCodeFactory.getZipCode(zip);
 
-    for (let i = 0; i < leadCalculations.length; i++) {
-      const item = leadCalculations[i];
-      if (count >= item.minCount && count <= item.maxCount) {
-        return item.price;
-      }
+  if (zipCodeData?.leadCalculations?.length) {
+    leadCalculations = zipCodeData.leadCalculations;
+  } else {
+    // fallback for case #2
+    leadCalculations = defaultLeadCalculations;
+  }
+
+  for (let i = 0; i < leadCalculations.length; i++) {
+    const item = leadCalculations[i];
+    if (count >= item.minCount && count <= item.maxCount) {
+      return item.price;
     }
   }
+
+  // ✅ Extra safety fallback (if config ranges are wrong)
+  if (leadCalculations?.length) {
+    // Return last slab price
+    return leadCalculations[leadCalculations.length - 1].price;
+  }
+
+  // Absolute last fallback (should not happen)
+  return 0;
+}
+
 
   async addJobReview(
     id: string,
