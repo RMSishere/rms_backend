@@ -22,6 +22,7 @@ import {
   parseFacebookSignedRequest,
 } from 'src/util';
 import { getLatLongFromZipcode } from 'src/util/geo';
+import { ZipCodeFactory } from 'src/zipCode/zipCode.factory';
 import { v4 as randomUUID } from 'uuid';
 import sgMail from '@sendgrid/mail';
 import { Device } from 'src/util/pushNotification';
@@ -91,6 +92,8 @@ constructor(
   @InjectModel('HelpMessage') public readonly helpMessageModel: Model<HelpMessage>,
   public notificationSubscriptionFactory: NotificationSubscriptionFactory,
   public notificationfactory: NotificationFactory,
+    public readonly zipCodeFactory: ZipCodeFactory,
+
   public readonly ghlService: GHLService,   // ← ADD THIS
 ) {
   super(countersModel);
@@ -3239,49 +3242,97 @@ async approveBusinessProfileByEmailOnly(
       throw err;
     }
   }
-  async getAffiliatesByZip(zipCode: string, user: User): Promise<User[]> {
-    try {
-      // get all affiliates whose nearby zipcodes contains the give zipcode
-      const res = await this.getApprovedAffiliates({
-        'businessProfile.nearByZipCodes': zipCode,
-      });
-      const affiliates = res.map(res => new UserDto(res));
-      
+async getAffiliatesByZip(zipCode: string, user: User): Promise<any> {
+  try {
+    const rawZip = String(zipCode ?? '').trim();
 
-      if (affiliates?.length === 0) {
-        const admin = await this.getAdmin();
+    // 1) basic validation
+    if (!/^\d{5}$/.test(rawZip)) {
+      throw new BadRequestException('Invalid zip code. Please provide a 5-digit zip code.');
+    }
 
-        if (admin && admin.email) {
-          // send app notification to affiliates
-          const title = `Needs Affiliate in zip code ${zipCode}`;
-          const description = `A user searched affiliates in zip code ${zipCode}`;
+    // 2) ✅ block if NOT a real US zip (Case #3)
+    const isUSZip = await this.zipCodeFactory.isUSZip(rawZip);
 
-          this.notificationfactory
-            .sendNotification(admin, NOTIFICATION_TYPES.APP_UPDATES, {
-              inApp: {
-                message: { title, description },
-              },
-            })
-            .catch(() => null); // discard error
-        }
-      }
-
+    if (!isUSZip) {
+      // Optional: still log searches for analytics (but not required)
       await this.zipCodeSearchModel.updateOne(
-        { zipCode },
+        { zipCode: rawZip },
         {
-          zipCode,
-          affiliatesCount: affiliates.length,
+          zipCode: rawZip,
+          affiliatesCount: 0,
           $inc: { searchCount: 1 },
-          $addToSet: { users: user._id }
+          ...(user?._id ? { $addToSet: { users: user._id } } : {}),
         },
         { upsert: true },
       );
 
-      return affiliates;
-    } catch (err) {
-      throw err;
+      return {
+        data: [],
+        status: 200,
+        message:
+          'Thank you for submitting your request, but we currently only serve the United States. We do hope to serve your area in the future.',
+        zipMeta: {
+          zip: rawZip,
+          isUSZip: false,
+          inServiceArea: false,
+          affiliatesCount: 0,
+          blocked: true,
+        },
+      };
     }
+
+    // 3) ✅ US zip → continue existing behavior (Case #1 & #2)
+    const res = await this.getApprovedAffiliates({
+      'businessProfile.nearByZipCodes': rawZip,
+    });
+
+    const affiliates = res.map((r) => new UserDto(r));
+    const affiliatesCount = affiliates.length;
+
+    // admin ping if none
+    if (affiliatesCount === 0) {
+      const admin = await this.getAdmin();
+      if (admin && admin.email) {
+        const title = `Needs Affiliate in zip code ${rawZip}`;
+        const description = `A user searched affiliates in zip code ${rawZip}`;
+
+        this.notificationfactory
+          .sendNotification(admin, NOTIFICATION_TYPES.APP_UPDATES, {
+            inApp: { message: { title, description } },
+          })
+          .catch(() => null);
+      }
+    }
+
+    // 4) track searches
+    await this.zipCodeSearchModel.updateOne(
+      { zipCode: rawZip },
+      {
+        zipCode: rawZip,
+        affiliatesCount,
+        $inc: { searchCount: 1 },
+        ...(user?._id ? { $addToSet: { users: user._id } } : {}),
+      },
+      { upsert: true },
+    );
+
+    // 5) response shape (keeps current "status:200 + data" but adds meta)
+    return {
+      data: affiliates,
+      status: 200,
+      zipMeta: {
+        zip: rawZip,
+        isUSZip: true,
+        inServiceArea: affiliatesCount > 0,
+        affiliatesCount,
+        blocked: false,
+      },
+    };
+  } catch (err) {
+    throw err;
   }
+}
   async getAllCustomers(params: any): Promise<PaginatedData> {
     const skip = parseInt(params.skip) || 0;
     const filter = { isActive: true, role: USER_ROLES.CLIENT };

@@ -485,10 +485,17 @@ async approveBusinessProfileByEmail(@Body('email') email: string) {
     return this.userFactory.getUserProfile(id);
   }
 
-  @Get('searchAffiliate/:zipCode')
-  async getAffiliateByZip(@Param('zipCode') zipCode: string, @Req() req) {
-    return this.userFactory.getAffiliatesByZip(zipCode, req.user);
+ @Get('searchAffiliate/:zipCode')
+async getAffiliateByZip(@Param('zipCode') zipCode: string, @Req() req) {
+  const rawZip = String(zipCode ?? '').trim();
+
+  // keep zip format consistent with createRequest()
+  if (!/^\d{5}$/.test(rawZip)) {
+    throw new BadRequestException('Invalid zip code. Please provide a 5-digit zip code.');
   }
+
+  return this.userFactory.getAffiliatesByZip(rawZip, req.user);
+}
   @Put('use-pricing-credit')
   async usePricingCredit(@Req() req) {
     const user = req.user;
