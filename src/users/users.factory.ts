@@ -2297,6 +2297,51 @@ console.log(user,'userrr');
     }
   }
 
+// put near other private helpers in the same service class
+
+private readonly ZAPIER_AFFILIATE_HOOK =
+  process.env.ZAPIER_AFFILIATE_HOOK_URL ||
+  'https://hooks.zapier.com/hooks/catch/25019006/urvfv9w/';
+
+private async postAffiliateToZapier(user: User, profile?: any) {
+  try {
+    const phone = user?.phoneNumber?.trim();
+    if (!phone) {
+      // phone is required by Zapier payload contract — skip if missing
+      console.warn('[ZAPIER][Affiliate] Skipped (missing phone). user_id=', user?._id);
+      return;
+    }
+
+    const payload = {
+      phone, // required
+      first_name: user?.firstName || '',
+      last_name: user?.lastName || '',
+      email: user?.email || '',
+      zip: profile?.zip || profile?.postalCode || profile?.zipCode || '',
+      form_type: 'Affiliate',
+      submitted_at: new Date().toISOString(), // timestamp
+      user_id: user?._id?.toString?.() || undefined, // only if available
+    };
+
+    // Use global fetch (Node 18+) or your existing HttpService/axios setup
+    const res = await fetch(this.ZAPIER_AFFILIATE_HOOK, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      console.error('[ZAPIER][Affiliate] Failed:', res.status, text);
+    } else {
+      console.log('[ZAPIER][Affiliate] Posted OK');
+    }
+  } catch (e: any) {
+    console.error('[ZAPIER][Affiliate] Error:', e?.message || e);
+  }
+}
+
+
 async createBusinessProfile(
   data: BusinessProfile,
   user: User,
@@ -2340,9 +2385,26 @@ async createBusinessProfile(
       // Send welcome message for new affiliates
       await this.sendWelcomeText(updatedUser);
 
+      // ✅ ZAPIER: Affiliate form submission (async, non-blocking)
+      if (updatedUser.role === USER_ROLES.AFFILIATE) {
+        this.postAffiliateToZapier(updatedUser, updatedUser.businessProfile).catch(
+          (e) =>
+            console.error(
+              '[ZAPIER][createBusinessProfile] failed:',
+              e?.message || e,
+            ),
+        );
+      }
+
       // WordPress Sync (async, non-blocking)
-      this.syncAffiliateProfileToWP(updatedUser, updatedUser.businessProfile).catch(
-        (e) => console.error('[WP SYNC][createBusinessProfile] failed:', e?.message || e),
+      this.syncAffiliateProfileToWP(
+        updatedUser,
+        updatedUser.businessProfile,
+      ).catch((e) =>
+        console.error(
+          '[WP SYNC][createBusinessProfile] failed:',
+          e?.message || e,
+        ),
       );
     }
 
@@ -2395,7 +2457,7 @@ async createBusinessProfile(
             GHL_PIPELINES.AFFILIATES,
             {
               name: `${updatedUser.firstName} ${updatedUser.lastName}`,
-            }
+            },
           );
 
           if (oppId) {
@@ -2422,7 +2484,7 @@ async createBusinessProfile(
             name: `${updatedUser.firstName} ${updatedUser.lastName}`,
             email: updatedUser.email,
             phone: updatedUser.phoneNumber,
-          }
+          },
         );
       }
     } catch (err) {
@@ -2433,9 +2495,15 @@ async createBusinessProfile(
     // 🟦 WORDPRESS SYNC: Syncing affiliate profile to WordPress
     // -----------------------------
     try {
-      await this.syncAffiliateProfileToWP(updatedUser, updatedUser.businessProfile);
+      await this.syncAffiliateProfileToWP(
+        updatedUser,
+        updatedUser.businessProfile,
+      );
     } catch (wpErr) {
-      console.error('[WP SYNC] Failed to sync affiliate profile:', wpErr?.message || wpErr);
+      console.error(
+        '[WP SYNC] Failed to sync affiliate profile:',
+        wpErr?.message || wpErr,
+      );
     }
 
     return updatedUser;
@@ -2444,6 +2512,7 @@ async createBusinessProfile(
     throw err;
   }
 }
+
 
 
 
