@@ -43,3 +43,8 @@ lerna-debug.log*
 runmysale-b68ad-firebase-adminsdk-fbsvc-ec5b0f8416.json
 .env
 
+
+# Firebase admin keys
+**/runmysale-b68ad-firebase-adminsdk-fbsvc-ec5b0f8416.json
+**/*firebase-adminsdk*.json
+
