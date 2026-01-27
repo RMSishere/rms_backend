@@ -38,3 +38,8 @@ lerna-debug.log*
 !.vscode/extensions.json
 
 /secrets
+# Secrets
+*.json
+runmysale-b68ad-firebase-adminsdk-fbsvc-ec5b0f8416.json
+.env
+
