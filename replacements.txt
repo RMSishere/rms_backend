@@ -1,0 +1,2 @@
+regex:sk_live_[0-9a-zA-Z]+==>REMOVED_STRIPE_LIVE_KEY
+regex:sk_test_[0-9a-zA-Z]+==>REMOVED_STRIPE_TEST_KEY
