@@ -1,8 +1,13 @@
 # compiled output
 /dist
 /node_modules
+
+# Env files (DO NOT COMMIT)
 .env
-.env.local
+.env.*
+!.env.example
+
+# ACME challenge (optional - keep if you don't want it in git)
 .well-known/acme-challenge
 
 # Logs
@@ -37,14 +42,12 @@ lerna-debug.log*
 !.vscode/launch.json
 !.vscode/extensions.json
 
+# Secrets folder
 /secrets
-# Secrets
-*.json
+
+# Firebase admin keys (service account JSON) - DO NOT COMMIT
 runmysale-b68ad-firebase-adminsdk-fbsvc-ec5b0f8416.json
-.env
-
-
-# Firebase admin keys
 **/runmysale-b68ad-firebase-adminsdk-fbsvc-ec5b0f8416.json
 **/*firebase-adminsdk*.json
-
+**/*serviceAccount*.json
+**/*service-account*.json
